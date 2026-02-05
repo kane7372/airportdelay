@@ -36,31 +36,68 @@ selected_year = st.sidebar.selectbox("연도(Year)를 선택하세요", [2025, 2
 st.title(f"🛫 인천공항 {selected_year}년 운영 및 기상 분석")
 
 # -----------------------------------------------------------
-# 2. 데이터 로드 및 전처리
+# 2. 데이터 로드 및 전처리 (수정된 버전)
 # -----------------------------------------------------------
 @st.cache_data
 def load_data(year):
     files = DATA_FILES.get(year)
-    
     if not files:
         return None, None, None
 
-    # [수정] 한글 파일 깨짐 방지를 위한 인코딩 설정 (cp949 또는 euc-kr)
-    try:
-        df_weather = pd.read_csv(files['weather'], encoding='cp949')
-        df_ramp = pd.read_csv(files['ramp'], encoding='cp949')
-        df_snow = pd.read_csv(files['snow'], encoding='cp949')
-    except UnicodeDecodeError:
-        # cp949로 안 될 경우 utf-8 시도
-        df_weather = pd.read_csv(files['weather'], encoding='utf-8')
-        df_ramp = pd.read_csv(files['ramp'], encoding='utf-8')
-        df_snow = pd.read_csv(files['snow'], encoding='utf-8')
-    except UnicodeDecodeError:
+    # [핵심] 인코딩을 자동으로 찾아주는 내부 함수
+    def read_csv_safe(filepath):
+        # 시도할 인코딩 목록 (순서 중요: cp949가 윈도우 엑셀 기본값)
+        encodings = ['cp949', 'utf-8', 'utf-8-sig', 'euc-kr', 'latin1']
         
-        df_weather = pd.read_csv(files['weather'], encoding='euc-kr')
-        df_ramp = pd.read_csv(files['ramp'], encoding='euc-kr')
-        df_snow = pd.read_csv(files['snow'], encoding='euc-kr')        
+        for enc in encodings:
+            try:
+                # engine='python'을 쓰면 좀 더 유연하게 읽습니다
+                return pd.read_csv(filepath, encoding=enc, engine='python')
+            except UnicodeDecodeError:
+                continue # 실패하면 다음 인코딩 시도
+            except Exception as e:
+                # 인코딩 문제가 아닌 다른 에러면 그냥 다음으로 넘어감
+                continue
+        
+        # 모든 인코딩 실패 시 에러 발생
+        raise ValueError(f"파일을 읽을 수 없습니다: {filepath}")
 
+    # 위에서 만든 안전한 함수로 파일 읽기
+    try:
+        df_weather = read_csv_safe(files['weather'])
+        df_ramp = read_csv_safe(files['ramp'])
+        df_snow = read_csv_safe(files['snow'])
+    except Exception as e:
+        st.error(f"파일 로딩 실패 ({year}년): {e}")
+        st.stop()
+
+    # --- 기상 데이터 전처리 ---
+    df_weather['일시'] = pd.to_datetime(df_weather['일시'])
+    df_weather['Month'] = df_weather['일시'].dt.month
+    df_weather['Day'] = df_weather['일시'].dt.day
+    df_weather['Hour'] = df_weather['일시'].dt.hour
+    
+    # --- 눈 데이터 전처리 ---
+    df_snow['일시'] = pd.to_datetime(df_snow['일시'])
+    df_snow['Month'] = df_snow['일시'].dt.month
+    df_snow['Day'] = df_snow['일시'].dt.day
+    df_snow['Hour'] = df_snow['일시'].dt.hour
+    
+    # --- RAMP 데이터 전처리 ---
+    df_ramp['Date'] = df_ramp['Date'].astype(str)
+    df_ramp['Date_dt'] = pd.to_datetime(df_ramp['Date'], format='%y%m%d', errors='coerce')
+    
+    def get_hour(x):
+        try:
+            return int(str(x).split(':')[0])
+        except:
+            return None
+            
+    df_ramp['Hour'] = df_ramp['STD'].apply(get_hour)
+    df_ramp['Month'] = df_ramp['Date_dt'].dt.month
+    df_ramp['Day'] = df_ramp['Date_dt'].dt.day
+    
+    return df_weather, df_ramp, df_snow
     # --- 기상 데이터 전처리 ---
     df_weather['일시'] = pd.to_datetime(df_weather['일시'])
     df_weather['Month'] = df_weather['일시'].dt.month
@@ -175,4 +212,5 @@ with st.expander("📂 원본 데이터 보기"):
     with col2:
         st.subheader("시간별 기상")
         st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '강수량(mm)']])
+
 
