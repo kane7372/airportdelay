@@ -11,12 +11,12 @@ import numpy as np
 DATA_FILES = {
     2023: {
         "weather": "AMOS_RKSI_2023.csv",
-        "ramp": "2023_RAMP_with_STD_v3.csv",
+        "ramp": "RAMP_2023.csv",
         "snow": "snow_AMOS_RKSI_2023.csv"
     },
     2024: {
         "weather": "AMOS_RKSI_2024.csv",
-        "ramp": "2024_RAMP_with_STD_v3.csv",
+        "ramp": "RAMP_2024.csv",
         "snow": "snow_AMOS_RKSI_2024.csv"
     },
     2025: {
@@ -88,6 +88,29 @@ def load_data(year):
     df_weather['Day'] = df_weather['일시'].dt.day
     df_weather['Hour'] = df_weather['일시'].dt.hour
     
+    # [추가] 상대습도 계산 (Magnus 공식 활용)
+    def calculate_rh(row):
+        T = row['기온(°C)']
+        Td = row['이슬점온도(°C)']
+        if pd.isna(T) or pd.isna(Td):
+            return None
+        
+        a = 17.625
+        b = 243.04
+        
+        try:
+            es = np.exp((a * T) / (b + T))
+            e  = np.exp((a * Td) / (b + Td))
+            rh = (e / es) * 100
+            return min(100, max(0, rh)) # 0~100 사이로 제한
+        except:
+            return None
+
+    if '기온(°C)' in df_weather.columns and '이슬점온도(°C)' in df_weather.columns:
+        df_weather['상대습도(%)'] = df_weather.apply(calculate_rh, axis=1)
+    else:
+        df_weather['상대습도(%)'] = None
+
     # --- 눈 데이터 전처리 ---
     df_snow['일시'] = pd.to_datetime(df_snow['일시'])
     df_snow['Month'] = df_snow['일시'].dt.month
@@ -108,10 +131,9 @@ def load_data(year):
         except:
             return None
     
-    # [추가] 지연 시간 계산 (ATD - STD)
+    # 지연 시간 계산 (ATD - STD)
     def calculate_delay_minutes(row):
         try:
-            # HH:MM 형식을 분(minute)으로 변환
             std_h, std_m = map(int, str(row['STD']).split(':'))
             atd_h, atd_m = map(int, str(row['ATD']).split(':'))
             
@@ -120,10 +142,9 @@ def load_data(year):
             
             diff = atd_mins - std_mins
             
-            # 자정 보정 (예: 23:50 -> 00:10 은 -1420분이 아니라 +20분)
-            if diff < -720:  # 12시간 이상 차이나면 다음날로 간주
+            if diff < -720:  
                 diff += 1440
-            elif diff > 720: # 12시간 이상 일찍? 전날로 간주
+            elif diff > 720: 
                 diff -= 1440
                 
             return diff
@@ -131,7 +152,7 @@ def load_data(year):
             return None
 
     df_ramp['Hour'] = df_ramp['STD'].apply(get_hour)
-    df_ramp['Delay_Min'] = df_ramp.apply(calculate_delay_minutes, axis=1) # 지연 시간 컬럼 추가
+    df_ramp['Delay_Min'] = df_ramp.apply(calculate_delay_minutes, axis=1)
     df_ramp['Month'] = df_ramp['Date_dt'].dt.month
     df_ramp['Day'] = df_ramp['Date_dt'].dt.day
     
@@ -160,13 +181,16 @@ daily_weather = df_weather[(df_weather['Month'] == selected_month) & (df_weather
 daily_snow = df_snow[(df_snow['Month'] == selected_month) & (df_snow['Day'] == selected_day)]
 daily_ramp = df_ramp[(df_ramp['Month'] == selected_month) & (df_ramp['Day'] == selected_day)]
 
-# 1. 시간별 지연 편수 (DLA)
+# 1. 시간별 총 운항 수 (DEP + DLA)
+hourly_ops = daily_ramp[daily_ramp['STS'].isin(['DEP', 'DLA'])].groupby('Hour').size().reindex(range(24), fill_value=0).reset_index(name='Ops_Count')
+
+# 2. 시간별 지연 편수 (DLA)
 hourly_delay_count = daily_ramp[daily_ramp['STS'] == 'DLA'].groupby('Hour').size().reindex(range(24), fill_value=0).reset_index(name='Delay_Count')
 
-# 2. 시간별 평균 지연 시간 (분) [추가됨]
+# 3. 시간별 평균 지연 시간 (분)
 hourly_delay_time = daily_ramp.groupby('Hour')['Delay_Min'].mean().reindex(range(24)).reset_index(name='Avg_Delay_Min')
 
-# 3. 시간별 평균 ATD-RAM
+# 4. 시간별 평균 ATD-RAM
 hourly_atd_ram = daily_ramp[daily_ramp['ATD-RAM'].notnull()].groupby('Hour')['ATD-RAM'].mean().reindex(range(24)).reset_index(name='Avg_ATD_RAM')
 
 # -----------------------------------------------------------
@@ -181,58 +205,68 @@ else:
     st.success("☀️ 이 날은 강설 기록이 없습니다.")
 
 if not daily_weather.empty:
-    # 7개의 서브플롯 생성
+    # 9개의 서브플롯
     fig = make_subplots(
-        rows=7, cols=1,
+        rows=9, cols=1,
         shared_xaxes=True,
         vertical_spacing=0.03,
         subplot_titles=(
+            "시간당 운항 수 (DEP+DLA)", 
             "지연(DLA) 편수", 
             "평균 지연 시간 (분)", 
             "평균 ATD-RAM (분)", 
             "풍속 (KT)", 
             "시정 (m)", 
             "기온 (°C)", 
+            "상대습도 (%)", 
             "현지 기압 (hPa)"
         )
     )
 
-    # 1. 지연 건수 (Bar)
+    # 1. 운항 수 (Bar)
+    fig.add_trace(go.Bar(x=hourly_ops['Hour'], y=hourly_ops['Ops_Count'], 
+                         name="총 운항 수", marker_color='navy'), row=1, col=1)
+
+    # 2. 지연 편수 (Bar)
     fig.add_trace(go.Bar(x=hourly_delay_count['Hour'], y=hourly_delay_count['Delay_Count'], 
-                         name="지연 편수", marker_color='red'), row=1, col=1)
+                         name="지연 편수", marker_color='red'), row=2, col=1)
 
-    # 2. 평균 지연 시간 (Line + Marker) [추가]
+    # 3. 평균 지연 시간 (Line)
     fig.add_trace(go.Scatter(x=hourly_delay_time['Hour'], y=hourly_delay_time['Avg_Delay_Min'], 
-                             name="평균 지연 시간", mode='lines+markers', line=dict(color='darkred')), row=2, col=1)
+                             name="평균 지연 시간", mode='lines+markers', line=dict(color='darkred')), row=3, col=1)
 
-    # 3. ATD-RAM (Line)
+    # 4. ATD-RAM (Line)
     fig.add_trace(go.Scatter(x=hourly_atd_ram['Hour'], y=hourly_atd_ram['Avg_ATD_RAM'], 
-                             name="평균 ATD-RAM", mode='lines+markers', line=dict(color='purple')), row=3, col=1)
+                             name="평균 ATD-RAM", mode='lines+markers', line=dict(color='purple')), row=4, col=1)
 
-    # 4. 풍속 (Line)
+    # 5. 풍속 (Line)
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['풍속(KT)'], 
-                             name="풍속", line=dict(color='orange')), row=4, col=1)
+                             name="풍속", line=dict(color='orange')), row=5, col=1)
 
-    # 5. 시정 (Area)
+    # 6. 시정 (Area)
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['시정(m)'], 
-                             name="시정", fill='tozeroy', line=dict(color='gray')), row=5, col=1)
+                             name="시정", fill='tozeroy', line=dict(color='gray')), row=6, col=1)
                              
-    # 6. 기온 (Line) [추가]
+    # 7. 기온 (Line)
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['기온(°C)'], 
-                             name="기온", line=dict(color='green')), row=6, col=1)
+                             name="기온", line=dict(color='green')), row=7, col=1)
 
-    # 7. 현지 기압 (Line) [추가]
+    # 8. 상대습도 (Line + Area)
+    fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['상대습도(%)'], 
+                             name="상대습도", fill='tozeroy', line=dict(color='deepskyblue')), row=8, col=1)
+
+    # 9. 현지 기압 (Line)
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['현지기압(hPa)'], 
-                             name="기압", line=dict(color='blue')), row=7, col=1)
+                             name="기압", line=dict(color='blue')), row=9, col=1)
 
-    # 눈 온 시간대 배경 강조 (모든 그래프에 적용)
+    # 눈 온 시간대 배경 강조
     for h in snow_hours:
-        for row in range(1, 8): # 1행부터 7행까지 반복
+        for row in range(1, 10):
             fig.add_vrect(x0=h-0.5, x1=h+0.5, fillcolor="blue", opacity=0.1, layer="below", line_width=0, row=row, col=1)
 
     # 레이아웃 설정
-    fig.update_layout(height=1600, showlegend=False, hovermode="x unified") # 높이 키움
-    fig.update_xaxes(title_text="시간 (Hour)", range=[-0.5, 23.5], row=7, col=1)
+    fig.update_layout(height=2000, showlegend=False, hovermode="x unified")
+    fig.update_xaxes(title_text="시간 (Hour)", range=[-0.5, 23.5], row=9, col=1)
 
     st.plotly_chart(fig, use_container_width=True)
 else:
@@ -244,12 +278,9 @@ else:
 with st.expander("📂 원본 데이터 보기"):
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("지연 항공편 목록")
-        if not daily_ramp[daily_ramp['STS'] == 'DLA'].empty:
-            st.dataframe(daily_ramp[daily_ramp['STS'] == 'DLA'][['FLT', 'STD', 'ATD', 'Delay_Min', 'STS']])
-        else:
-            st.write("지연편 없음")
+        st.subheader("운항 상세 (DLA 포함)")
+        # [수정] RAM 컬럼 추가
+        st.dataframe(daily_ramp[['FLT', 'STD', 'RAM', 'ATD', 'Delay_Min','ATD-RAMP', 'STS']])
     with col2:
         st.subheader("시간별 기상 상세")
-        st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '현지기압(hPa)', '강수량(mm)']])
-
+        st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '상대습도(%)', '현지기압(hPa)', '강수량(mm)']])
