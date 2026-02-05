@@ -190,16 +190,25 @@ hourly_planned = daily_ramp.groupby('STD_Hour').size().reindex(range(24), fill_v
 df_actual_base = daily_ramp[daily_ramp['STS'].isin(['DEP', 'DLA'])]
 
 # =========================================================================================
-# [옵션] ATD 기준 집계 시 STD가 없는 데이터(스케줄 미확인 등) 제외하기
+# [옵션 1] ATD 기준 집계 시 STD가 없는 데이터 제외하기
 # 아래 주석(#)을 해제하면 STD가 비어있는 행은 실제 운항 수 집계에서 제외됩니다.
 # =========================================================================================
-df_actual_base = df_actual_base[df_actual_base['STD'].notna() & (df_actual_base['STD'] != '')]
+# df_actual_base = df_actual_base[df_actual_base['STD'].notna() & (df_actual_base['STD'] != '')]
 # =========================================================================================
 
 hourly_actual = df_actual_base.groupby('ATD_Hour').size().reindex(range(24), fill_value=0).reset_index(name='Actual_Count')
 
 # 3. 시간별 지연 편수 (DLA) - STD 기준
-hourly_delay_count = daily_ramp[daily_ramp['STS'] == 'DLA'].groupby('STD_Hour').size().reindex(range(24), fill_value=0).reset_index(name='Delay_Count')
+df_delay_base = daily_ramp[daily_ramp['STS'] == 'DLA']
+
+# =========================================================================================
+# [옵션 2] 지연 편수 집계 시 STD가 없는 데이터 제외하기
+# 아래 주석(#)을 해제하면 STD가 비어있는 행은 지연 편수 집계에서 제외됩니다.
+# =========================================================================================
+# df_delay_base = df_delay_base[df_delay_base['STD'].notna() & (df_delay_base['STD'] != '')]
+# =========================================================================================
+
+hourly_delay_count = df_delay_base.groupby('STD_Hour').size().reindex(range(24), fill_value=0).reset_index(name='Delay_Count')
 
 # 4. 시간별 평균 지연 시간 (분) - STD 기준
 hourly_delay_time = daily_ramp.groupby('STD_Hour')['Delay_Min'].mean().reindex(range(24)).reset_index(name='Avg_Delay_Min')
@@ -324,4 +333,3 @@ with st.expander("📂 원본 데이터 보기"):
         if '강수량(mm)' in daily_weather.columns:
             weather_cols.append('강수량(mm)')
         st.dataframe(daily_weather[weather_cols])
-
