@@ -193,7 +193,7 @@ df_actual_base = daily_ramp[daily_ramp['STS'].isin(['DEP', 'DLA'])]
 # [옵션] ATD 기준 집계 시 STD가 없는 데이터(스케줄 미확인 등) 제외하기
 # 아래 주석(#)을 해제하면 STD가 비어있는 행은 실제 운항 수 집계에서 제외됩니다.
 # =========================================================================================
-# df_actual_base = df_actual_base[df_actual_base['STD'].notna() & (df_actual_base['STD'] != '')]
+df_actual_base = df_actual_base[df_actual_base['STD'].notna() & (df_actual_base['STD'] != '')]
 # =========================================================================================
 
 hourly_actual = df_actual_base.groupby('ATD_Hour').size().reindex(range(24), fill_value=0).reset_index(name='Actual_Count')
@@ -324,3 +324,4 @@ with st.expander("📂 원본 데이터 보기"):
         if '강수량(mm)' in daily_weather.columns:
             weather_cols.append('강수량(mm)')
         st.dataframe(daily_weather[weather_cols])
+
