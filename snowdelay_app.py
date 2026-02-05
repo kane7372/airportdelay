@@ -46,7 +46,7 @@ def load_data(year):
 
     # [내부 함수 1] 안전하게 파일 읽기 (인코딩 자동 탐지)
     def read_csv_safe(filepath):
-        encodings = ['utf-8', 'utf-8-sig',''cp949' 'euc-kr', 'latin1']
+        encodings = ['utf-8', 'utf-8-sig','cp949','euc-kr', 'latin1']
         for enc in encodings:
             try:
                 # 1. 파일 읽기
@@ -255,6 +255,7 @@ with st.expander("📂 원본 데이터 보기"):
     with col2:
         st.subheader("시간별 기상")
         st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '강수량(mm)']])
+
 
 
 
