@@ -11,12 +11,12 @@ import numpy as np
 DATA_FILES = {
     2023: {
         "weather": "AMOS_RKSI_2023.csv",
-        "ramp": "RAMP_2023.csv",
+        "ramp": "2023_RAMP_with_STD_v3.csv",
         "snow": "snow_AMOS_RKSI_2023.csv"
     },
     2024: {
         "weather": "AMOS_RKSI_2024.csv",
-        "ramp": "RAMP_2024.csv",
+        "ramp": "2024_RAMP_with_STD_v3.csv",
         "snow": "snow_AMOS_RKSI_2024.csv"
     },
     2025: {
@@ -284,3 +284,4 @@ with st.expander("📂 원본 데이터 보기"):
     with col2:
         st.subheader("시간별 기상 상세")
         st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '상대습도(%)', '현지기압(hPa)', '강수량(mm)']])
+
