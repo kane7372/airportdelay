@@ -36,7 +36,7 @@ selected_year = st.sidebar.selectbox("연도(Year)를 선택하세요", [2025, 2
 st.title(f"🛫 인천공항 {selected_year}년 운영 및 기상 분석")
 
 # -----------------------------------------------------------
-# 2. 데이터 로드 및 전처리 (수정된 버전)
+# 2. 데이터 로드 및 전처리 (컬럼명 자동 보정 기능 추가)
 # -----------------------------------------------------------
 @st.cache_data
 def load_data(year):
@@ -44,25 +44,36 @@ def load_data(year):
     if not files:
         return None, None, None
 
-    # [핵심] 인코딩을 자동으로 찾아주는 내부 함수
+    # [내부 함수 1] 안전하게 파일 읽기 (인코딩 자동 탐지)
     def read_csv_safe(filepath):
-        # 시도할 인코딩 목록 (순서 중요: cp949가 윈도우 엑셀 기본값)
         encodings = ['cp949', 'utf-8', 'utf-8-sig', 'euc-kr', 'latin1']
-        
         for enc in encodings:
             try:
-                # engine='python'을 쓰면 좀 더 유연하게 읽습니다
-                return pd.read_csv(filepath, encoding=enc, engine='python')
+                # 1. 파일 읽기
+                df = pd.read_csv(filepath, encoding=enc, engine='python')
+                
+                # 2. 컬럼명 공백 제거 (예: " Date " -> "Date")
+                df.columns = df.columns.str.strip() 
+                return df
             except UnicodeDecodeError:
-                continue # 실패하면 다음 인코딩 시도
-            except Exception as e:
-                # 인코딩 문제가 아닌 다른 에러면 그냥 다음으로 넘어감
                 continue
-        
-        # 모든 인코딩 실패 시 에러 발생
+            except Exception:
+                continue
         raise ValueError(f"파일을 읽을 수 없습니다: {filepath}")
 
-    # 위에서 만든 안전한 함수로 파일 읽기
+    # [내부 함수 2] 날짜 컬럼 찾기 (Date, date, 일자 등)
+    def find_date_column(df, filename):
+        # 찾을 후보군 리스트
+        candidates = ['Date', 'date', 'DATE', '일자', '날짜', 'OpDate']
+        
+        for col in df.columns:
+            if col in candidates:
+                return col
+        
+        # 못 찾았을 경우 에러 메시지와 함께 현재 컬럼 목록 출력
+        raise KeyError(f"'{filename}' 파일에서 날짜 컬럼을 찾을 수 없습니다.\n현재 컬럼 목록: {list(df.columns)}")
+
+    # 1. 데이터 불러오기
     try:
         df_weather = read_csv_safe(files['weather'])
         df_ramp = read_csv_safe(files['ramp'])
@@ -71,6 +82,38 @@ def load_data(year):
         st.error(f"파일 로딩 실패 ({year}년): {e}")
         st.stop()
 
+    # --- 기상 데이터 전처리 ---
+    df_weather['일시'] = pd.to_datetime(df_weather['일시'])
+    df_weather['Month'] = df_weather['일시'].dt.month
+    df_weather['Day'] = df_weather['일시'].dt.day
+    df_weather['Hour'] = df_weather['일시'].dt.hour
+    
+    # --- 눈 데이터 전처리 ---
+    df_snow['일시'] = pd.to_datetime(df_snow['일시'])
+    df_snow['Month'] = df_snow['일시'].dt.month
+    df_snow['Day'] = df_snow['일시'].dt.day
+    df_snow['Hour'] = df_snow['일시'].dt.hour
+    
+    # --- RAMP 데이터 전처리 (여기가 핵심!) ---
+    # 날짜 컬럼 이름을 자동으로 찾아서 'Date'로 통일
+    date_col_name = find_date_column(df_ramp, files['ramp'])
+    df_ramp.rename(columns={date_col_name: 'Date'}, inplace=True)
+
+    df_ramp['Date'] = df_ramp['Date'].astype(str)
+    df_ramp['Date_dt'] = pd.to_datetime(df_ramp['Date'], format='%y%m%d', errors='coerce')
+    
+    # STD 시간 추출
+    def get_hour(x):
+        try:
+            return int(str(x).split(':')[0])
+        except:
+            return None
+            
+    df_ramp['Hour'] = df_ramp['STD'].apply(get_hour)
+    df_ramp['Month'] = df_ramp['Date_dt'].dt.month
+    df_ramp['Day'] = df_ramp['Date_dt'].dt.day
+    
+    return df_weather, df_ramp, df_snow
     # --- 기상 데이터 전처리 ---
     df_weather['일시'] = pd.to_datetime(df_weather['일시'])
     df_weather['Month'] = df_weather['일시'].dt.month
@@ -212,5 +255,6 @@ with st.expander("📂 원본 데이터 보기"):
     with col2:
         st.subheader("시간별 기상")
         st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '강수량(mm)']])
+
 
 
