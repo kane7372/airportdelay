@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import numpy as np
 
 # -----------------------------------------------------------
 # [설정] 연도별 파일 이름 매핑
@@ -36,7 +37,7 @@ selected_year = st.sidebar.selectbox("연도(Year)를 선택하세요", [2025, 2
 st.title(f"🛫 인천공항 {selected_year}년 운영 및 기상 분석")
 
 # -----------------------------------------------------------
-# 2. 데이터 로드 및 전처리 (컬럼명 자동 보정 기능 추가)
+# 2. 데이터 로드 및 전처리
 # -----------------------------------------------------------
 @st.cache_data
 def load_data(year):
@@ -44,16 +45,19 @@ def load_data(year):
     if not files:
         return None, None, None
 
-    # [내부 함수 1] 안전하게 파일 읽기 (인코딩 자동 탐지)
+    # [내부 함수 1] 안전하게 파일 읽기
     def read_csv_safe(filepath):
-        encodings = ['utf-8', 'utf-8-sig','cp949','euc-kr', 'latin1']
+        encodings = ['utf-8-sig', 'utf-8', 'cp949', 'euc-kr', 'latin1']
         for enc in encodings:
             try:
-                # 1. 파일 읽기
                 df = pd.read_csv(filepath, encoding=enc, engine='python')
+                df.columns = [col.strip() if isinstance(col, str) else col for col in df.columns]
                 
-                # 2. 컬럼명 공백 제거 (예: " Date " -> "Date")
-                df.columns = df.columns.str.strip() 
+                # 깨진 컬럼명(BOM) 강제 수정
+                if isinstance(df.columns[0], str) and 'ate' in df.columns[0] and len(df.columns[0]) > 4:
+                     new_cols = list(df.columns)
+                     new_cols[0] = 'Date'
+                     df.columns = new_cols
                 return df
             except UnicodeDecodeError:
                 continue
@@ -61,16 +65,12 @@ def load_data(year):
                 continue
         raise ValueError(f"파일을 읽을 수 없습니다: {filepath}")
 
-    # [내부 함수 2] 날짜 컬럼 찾기 (Date, date, 일자 등)
+    # [내부 함수 2] 날짜 컬럼 찾기
     def find_date_column(df, filename):
-        # 찾을 후보군 리스트
         candidates = ['Date', 'date', 'DATE', '일자', '날짜', 'OpDate']
-        
         for col in df.columns:
             if col in candidates:
                 return col
-        
-        # 못 찾았을 경우 에러 메시지와 함께 현재 컬럼 목록 출력
         raise KeyError(f"'{filename}' 파일에서 날짜 컬럼을 찾을 수 없습니다.\n현재 컬럼 목록: {list(df.columns)}")
 
     # 1. 데이터 불러오기
@@ -94,8 +94,7 @@ def load_data(year):
     df_snow['Day'] = df_snow['일시'].dt.day
     df_snow['Hour'] = df_snow['일시'].dt.hour
     
-    # --- RAMP 데이터 전처리 (여기가 핵심!) ---
-    # 날짜 컬럼 이름을 자동으로 찾아서 'Date'로 통일
+    # --- RAMP 데이터 전처리 ---
     date_col_name = find_date_column(df_ramp, files['ramp'])
     df_ramp.rename(columns={date_col_name: 'Date'}, inplace=True)
 
@@ -108,62 +107,31 @@ def load_data(year):
             return int(str(x).split(':')[0])
         except:
             return None
-            
-    df_ramp['Hour'] = df_ramp['STD'].apply(get_hour)
-    df_ramp['Month'] = df_ramp['Date_dt'].dt.month
-    df_ramp['Day'] = df_ramp['Date_dt'].dt.day
     
-    return df_weather, df_ramp, df_snow
-    # --- 기상 데이터 전처리 ---
-    df_weather['일시'] = pd.to_datetime(df_weather['일시'])
-    df_weather['Month'] = df_weather['일시'].dt.month
-    df_weather['Day'] = df_weather['일시'].dt.day
-    df_weather['Hour'] = df_weather['일시'].dt.hour
-    
-    # --- 눈 데이터 전처리 ---
-    df_snow['일시'] = pd.to_datetime(df_snow['일시'])
-    df_snow['Month'] = df_snow['일시'].dt.month
-    df_snow['Day'] = df_snow['일시'].dt.day
-    df_snow['Hour'] = df_snow['일시'].dt.hour
-    
-    # --- RAMP 데이터 전처리 ---
-    df_ramp['Date'] = df_ramp['Date'].astype(str)
-    df_ramp['Date_dt'] = pd.to_datetime(df_ramp['Date'], format='%y%m%d', errors='coerce')
-    
-    def get_hour(x):
+    # [추가] 지연 시간 계산 (ATD - STD)
+    def calculate_delay_minutes(row):
         try:
-            return int(str(x).split(':')[0])
+            # HH:MM 형식을 분(minute)으로 변환
+            std_h, std_m = map(int, str(row['STD']).split(':'))
+            atd_h, atd_m = map(int, str(row['ATD']).split(':'))
+            
+            std_mins = std_h * 60 + std_m
+            atd_mins = atd_h * 60 + atd_m
+            
+            diff = atd_mins - std_mins
+            
+            # 자정 보정 (예: 23:50 -> 00:10 은 -1420분이 아니라 +20분)
+            if diff < -720:  # 12시간 이상 차이나면 다음날로 간주
+                diff += 1440
+            elif diff > 720: # 12시간 이상 일찍? 전날로 간주
+                diff -= 1440
+                
+            return diff
         except:
             return None
-            
+
     df_ramp['Hour'] = df_ramp['STD'].apply(get_hour)
-    df_ramp['Month'] = df_ramp['Date_dt'].dt.month
-    df_ramp['Day'] = df_ramp['Date_dt'].dt.day
-    
-    return df_weather, df_ramp, df_snow
-    # --- 기상 데이터 전처리 ---
-    df_weather['일시'] = pd.to_datetime(df_weather['일시'])
-    df_weather['Month'] = df_weather['일시'].dt.month
-    df_weather['Day'] = df_weather['일시'].dt.day
-    df_weather['Hour'] = df_weather['일시'].dt.hour
-    
-    # --- 눈 데이터 전처리 ---
-    df_snow['일시'] = pd.to_datetime(df_snow['일시'])
-    df_snow['Month'] = df_snow['일시'].dt.month
-    df_snow['Day'] = df_snow['일시'].dt.day
-    df_snow['Hour'] = df_snow['일시'].dt.hour
-    
-    # --- RAMP 데이터 전처리 ---
-    df_ramp['Date'] = df_ramp['Date'].astype(str)
-    df_ramp['Date_dt'] = pd.to_datetime(df_ramp['Date'], format='%y%m%d', errors='coerce')
-    
-    def get_hour(x):
-        try:
-            return int(str(x).split(':')[0])
-        except:
-            return None
-            
-    df_ramp['Hour'] = df_ramp['STD'].apply(get_hour)
+    df_ramp['Delay_Min'] = df_ramp.apply(calculate_delay_minutes, axis=1) # 지연 시간 컬럼 추가
     df_ramp['Month'] = df_ramp['Date_dt'].dt.month
     df_ramp['Day'] = df_ramp['Date_dt'].dt.day
     
@@ -186,13 +154,19 @@ available_days = sorted(df_weather[df_weather['Month'] == selected_month]['Day']
 selected_day = st.sidebar.selectbox("일(Day)을 선택하세요", available_days)
 
 # -----------------------------------------------------------
-# 4. 데이터 필터링
+# 4. 데이터 필터링 및 집계
 # -----------------------------------------------------------
 daily_weather = df_weather[(df_weather['Month'] == selected_month) & (df_weather['Day'] == selected_day)]
 daily_snow = df_snow[(df_snow['Month'] == selected_month) & (df_snow['Day'] == selected_day)]
 daily_ramp = df_ramp[(df_ramp['Month'] == selected_month) & (df_ramp['Day'] == selected_day)]
 
-hourly_delay = daily_ramp[daily_ramp['STS'] == 'DLA'].groupby('Hour').size().reindex(range(24), fill_value=0).reset_index(name='Delay_Count')
+# 1. 시간별 지연 편수 (DLA)
+hourly_delay_count = daily_ramp[daily_ramp['STS'] == 'DLA'].groupby('Hour').size().reindex(range(24), fill_value=0).reset_index(name='Delay_Count')
+
+# 2. 시간별 평균 지연 시간 (분) [추가됨]
+hourly_delay_time = daily_ramp.groupby('Hour')['Delay_Min'].mean().reindex(range(24)).reset_index(name='Avg_Delay_Min')
+
+# 3. 시간별 평균 ATD-RAM
 hourly_atd_ram = daily_ramp[daily_ramp['ATD-RAM'].notnull()].groupby('Hour')['ATD-RAM'].mean().reindex(range(24)).reset_index(name='Avg_ATD_RAM')
 
 # -----------------------------------------------------------
@@ -202,40 +176,63 @@ st.header(f"📊 {selected_year}년 {selected_month}월 {selected_day}일 상세
 
 snow_hours = daily_snow['Hour'].unique()
 if len(snow_hours) > 0:
-    st.info(f"❄️ 강설 관측 시간대: {sorted(snow_hours)}시 (그래프 배경 강조)")
+    st.info(f"❄️ 강설 관측 시간대: {sorted(snow_hours)}시 (그래프 배경이 파랗게 표시됩니다)")
 else:
     st.success("☀️ 이 날은 강설 기록이 없습니다.")
 
 if not daily_weather.empty:
+    # 7개의 서브플롯 생성
     fig = make_subplots(
-        rows=4, cols=1,
+        rows=7, cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.05,
-        subplot_titles=("지연(DLA) 편수", "평균 ATD-RAM (분)", "풍속 (KT)", "시정 (m)")
+        vertical_spacing=0.03,
+        subplot_titles=(
+            "지연(DLA) 편수", 
+            "평균 지연 시간 (분)", 
+            "평균 ATD-RAM (분)", 
+            "풍속 (KT)", 
+            "시정 (m)", 
+            "기온 (°C)", 
+            "현지 기압 (hPa)"
+        )
     )
 
-    # 그래프 1: 지연 건수
-    fig.add_trace(go.Bar(x=hourly_delay['Hour'], y=hourly_delay['Delay_Count'], 
-                         name="지연 건수", marker_color='red'), row=1, col=1)
+    # 1. 지연 건수 (Bar)
+    fig.add_trace(go.Bar(x=hourly_delay_count['Hour'], y=hourly_delay_count['Delay_Count'], 
+                         name="지연 편수", marker_color='red'), row=1, col=1)
 
-    # 그래프 2: ATD-RAM
+    # 2. 평균 지연 시간 (Line + Marker) [추가]
+    fig.add_trace(go.Scatter(x=hourly_delay_time['Hour'], y=hourly_delay_time['Avg_Delay_Min'], 
+                             name="평균 지연 시간", mode='lines+markers', line=dict(color='darkred')), row=2, col=1)
+
+    # 3. ATD-RAM (Line)
     fig.add_trace(go.Scatter(x=hourly_atd_ram['Hour'], y=hourly_atd_ram['Avg_ATD_RAM'], 
-                             name="평균 ATD-RAM", mode='lines+markers', line=dict(color='purple')), row=2, col=1)
+                             name="평균 ATD-RAM", mode='lines+markers', line=dict(color='purple')), row=3, col=1)
 
-    # 그래프 3: 풍속
+    # 4. 풍속 (Line)
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['풍속(KT)'], 
-                             name="풍속", line=dict(color='orange')), row=3, col=1)
+                             name="풍속", line=dict(color='orange')), row=4, col=1)
 
-    # 그래프 4: 시정
+    # 5. 시정 (Area)
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['시정(m)'], 
-                             name="시정", fill='tozeroy', line=dict(color='gray')), row=4, col=1)
+                             name="시정", fill='tozeroy', line=dict(color='gray')), row=5, col=1)
+                             
+    # 6. 기온 (Line) [추가]
+    fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['기온(°C)'], 
+                             name="기온", line=dict(color='green')), row=6, col=1)
 
-    # 강설 배경 강조
+    # 7. 현지 기압 (Line) [추가]
+    fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['현지기압(hPa)'], 
+                             name="기압", line=dict(color='blue')), row=7, col=1)
+
+    # 눈 온 시간대 배경 강조 (모든 그래프에 적용)
     for h in snow_hours:
-        fig.add_vrect(x0=h-0.5, x1=h+0.5, fillcolor="blue", opacity=0.1, layer="below", line_width=0)
+        for row in range(1, 8): # 1행부터 7행까지 반복
+            fig.add_vrect(x0=h-0.5, x1=h+0.5, fillcolor="blue", opacity=0.1, layer="below", line_width=0, row=row, col=1)
 
-    fig.update_layout(height=1000, showlegend=False, hovermode="x unified")
-    fig.update_xaxes(title_text="시간 (Hour)", range=[-0.5, 23.5], row=4, col=1)
+    # 레이아웃 설정
+    fig.update_layout(height=1600, showlegend=False, hovermode="x unified") # 높이 키움
+    fig.update_xaxes(title_text="시간 (Hour)", range=[-0.5, 23.5], row=7, col=1)
 
     st.plotly_chart(fig, use_container_width=True)
 else:
@@ -249,14 +246,9 @@ with st.expander("📂 원본 데이터 보기"):
     with col1:
         st.subheader("지연 항공편 목록")
         if not daily_ramp[daily_ramp['STS'] == 'DLA'].empty:
-            st.dataframe(daily_ramp[daily_ramp['STS'] == 'DLA'][['FLT', 'STD', 'ATD', 'DES', 'ATD-RAM']])
+            st.dataframe(daily_ramp[daily_ramp['STS'] == 'DLA'][['FLT', 'STD', 'ATD', 'Delay_Min', 'STS']])
         else:
             st.write("지연편 없음")
     with col2:
-        st.subheader("시간별 기상")
-        st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '강수량(mm)']])
-
-
-
-
-
+        st.subheader("시간별 기상 상세")
+        st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '현지기압(hPa)', '강수량(mm)']])
