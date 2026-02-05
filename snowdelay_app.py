@@ -16,7 +16,7 @@ DATA_FILES = {
     },
     2024: {
         "weather": "AMOS_RKSI_2024.csv",
-        "ramp": "2024_RAMP_with_STD_v3.csv",
+        "ramp": "2024_RAMP_with_STD_v3",
         "snow": "snow_AMOS_RKSI_2024.csv"
     },
     2025: {
@@ -88,7 +88,7 @@ def load_data(year):
     df_weather['Day'] = df_weather['일시'].dt.day
     df_weather['Hour'] = df_weather['일시'].dt.hour
     
-    # [추가] 상대습도 계산 (Magnus 공식 활용)
+    # 상대습도 계산 (Magnus 공식 활용)
     def calculate_rh(row):
         T = row['기온(°C)']
         Td = row['이슬점온도(°C)']
@@ -201,7 +201,6 @@ st.header(f"📊 {selected_year}년 {selected_month}월 {selected_day}일 상세
 snow_hours = daily_snow['Hour'].unique()
 
 if len(snow_hours) > 0:
-    # [수정] np.int32 출력을 방지하기 위해 일반 Python int로 변환
     snow_hours_clean = [int(h) for h in sorted(snow_hours)]
     st.info(f"❄️ 강설 관측 시간대: {snow_hours_clean}시 (그래프 배경이 하늘색으로 표시됩니다)")
 else:
@@ -262,19 +261,26 @@ if not daily_weather.empty:
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['현지기압(hPa)'], 
                              name="기압", line=dict(color='blue')), row=9, col=1)
 
-    # [수정] 눈 온 시간대 배경 강조 (하늘색 skyblue)
+    # 눈 온 시간대 배경 강조 (하늘색)
     for h in snow_hours:
         for row in range(1, 10):
             fig.add_vrect(
                 x0=h-0.5, x1=h+0.5, 
-                fillcolor="skyblue",  # 하늘색 변경
-                opacity=0.3,          # 투명도 조절 (0.3 정도가 적당)
+                fillcolor="skyblue", 
+                opacity=0.3, 
                 layer="below", line_width=0, row=row, col=1
             )
 
     # 레이아웃 설정
     fig.update_layout(height=2000, showlegend=False, hovermode="x unified")
-    fig.update_xaxes(title_text="시간 (Hour)", range=[-0.5, 23.5], row=9, col=1)
+    
+    # [수정] 모든 x축에 라벨(숫자) 표시 강제 적용
+    fig.update_xaxes(showticklabels=True, title_text=None) # 타이틀은 중복되니 제거하고 숫자만
+    # 맨 마지막 축에만 '시간(Hour)' 타이틀 붙이기
+    fig.update_xaxes(title_text="시간 (Hour)", row=9, col=1)
+    
+    # 모든 x축 범위 고정
+    fig.update_xaxes(range=[-0.5, 23.5])
 
     st.plotly_chart(fig, use_container_width=True)
 else:
