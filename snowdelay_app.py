@@ -55,6 +55,11 @@ def load_data(year):
         df_weather = pd.read_csv(files['weather'], encoding='utf-8')
         df_ramp = pd.read_csv(files['ramp'], encoding='utf-8')
         df_snow = pd.read_csv(files['snow'], encoding='utf-8')
+    except UnicodeDecodeError:
+        
+        df_weather = pd.read_csv(files['weather'], encoding='euc-kr')
+        df_ramp = pd.read_csv(files['ramp'], encoding='euc-kr')
+        df_snow = pd.read_csv(files['snow'], encoding='euc-kr')        
 
     # --- 기상 데이터 전처리 ---
     df_weather['일시'] = pd.to_datetime(df_weather['일시'])
@@ -170,3 +175,4 @@ with st.expander("📂 원본 데이터 보기"):
     with col2:
         st.subheader("시간별 기상")
         st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '강수량(mm)']])
+
