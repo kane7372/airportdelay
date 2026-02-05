@@ -199,8 +199,11 @@ hourly_atd_ram = daily_ramp[daily_ramp['ATD-RAM'].notnull()].groupby('Hour')['AT
 st.header(f"📊 {selected_year}년 {selected_month}월 {selected_day}일 상세 분석")
 
 snow_hours = daily_snow['Hour'].unique()
+
 if len(snow_hours) > 0:
-    st.info(f"❄️ 강설 관측 시간대: {sorted(snow_hours)}시 (그래프 배경이 파랗게 표시됩니다)")
+    # [수정] np.int32 출력을 방지하기 위해 일반 Python int로 변환
+    snow_hours_clean = [int(h) for h in sorted(snow_hours)]
+    st.info(f"❄️ 강설 관측 시간대: {snow_hours_clean}시 (그래프 배경이 하늘색으로 표시됩니다)")
 else:
     st.success("☀️ 이 날은 강설 기록이 없습니다.")
 
@@ -259,10 +262,15 @@ if not daily_weather.empty:
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['현지기압(hPa)'], 
                              name="기압", line=dict(color='blue')), row=9, col=1)
 
-    # 눈 온 시간대 배경 강조
+    # [수정] 눈 온 시간대 배경 강조 (하늘색 skyblue)
     for h in snow_hours:
         for row in range(1, 10):
-            fig.add_vrect(x0=h-0.5, x1=h+0.5, fillcolor="blue", opacity=0.1, layer="below", line_width=0, row=row, col=1)
+            fig.add_vrect(
+                x0=h-0.5, x1=h+0.5, 
+                fillcolor="skyblue",  # 하늘색 변경
+                opacity=0.3,          # 투명도 조절 (0.3 정도가 적당)
+                layer="below", line_width=0, row=row, col=1
+            )
 
     # 레이아웃 설정
     fig.update_layout(height=2000, showlegend=False, hovermode="x unified")
@@ -279,9 +287,7 @@ with st.expander("📂 원본 데이터 보기"):
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("운항 상세 (DLA 포함)")
-        # [수정] RAM 컬럼 추가
-        st.dataframe(daily_ramp[['FLT', 'STD', 'RAM', 'ATD', 'Delay_Min','ATD-RAMP', 'STS']])
+        st.dataframe(daily_ramp[['FLT', 'STD', 'RAM', 'ATD', 'Delay_Min', 'STS']])
     with col2:
         st.subheader("시간별 기상 상세")
         st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '상대습도(%)', '현지기압(hPa)', '강수량(mm)']])
-
