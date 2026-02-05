@@ -293,8 +293,9 @@ with st.expander("📂 원본 데이터 보기"):
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("운항 상세 (DLA 포함)")
-        st.dataframe(daily_ramp[['FLT', 'STD', 'RAM', 'ATD', 'Delay_Min', 'STS']])
+        st.dataframe(daily_ramp[['FLT', 'STD', 'RAM', 'ATD', 'Delay_Min','ATD-RAM', 'STS']])
     with col2:
         st.subheader("시간별 기상 상세")
         st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '상대습도(%)', '현지기압(hPa)', '강수량(mm)']])
+
 
