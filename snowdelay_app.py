@@ -186,11 +186,19 @@ daily_ramp = df_ramp[(df_ramp['Month'] == selected_month) & (df_ramp['Day'] == s
 # 1. [계획] 시간별 계획된 운항 수 (STD 기준) - 모든 운항 포함
 hourly_planned = daily_ramp.groupby('STD_Hour').size().reindex(range(24), fill_value=0).reset_index(name='Planned_Count')
 
-# 2. [실제] 시간별 실제 운항 수 (ATD 기준) - DEP, DLA 상태만 포함
-hourly_actual = daily_ramp[daily_ramp['STS'].isin(['DEP', 'DLA'])].groupby('ATD_Hour').size().reindex(range(24), fill_value=0).reset_index(name='Actual_Count')
+# 2. [실제] 시간별 실제 운항 수 (ATD 기준)
+df_actual_base = daily_ramp[daily_ramp['STS'].isin(['DEP', 'DLA'])]
 
-# 3. 시간별 지연 편수 (DLA) - STD 기준 (원래 계획 시간대에 얼마나 지연되었나)
-#    (만약 실제 출발 시간 기준 지연 빈도를 보고 싶다면 'ATD_Hour'로 변경 가능하나, 통상 스케줄 기준 분석이 많음)
+# =========================================================================================
+# [옵션] ATD 기준 집계 시 STD가 없는 데이터(스케줄 미확인 등) 제외하기
+# 아래 주석(#)을 해제하면 STD가 비어있는 행은 실제 운항 수 집계에서 제외됩니다.
+# =========================================================================================
+# df_actual_base = df_actual_base[df_actual_base['STD'].notna() & (df_actual_base['STD'] != '')]
+# =========================================================================================
+
+hourly_actual = df_actual_base.groupby('ATD_Hour').size().reindex(range(24), fill_value=0).reset_index(name='Actual_Count')
+
+# 3. 시간별 지연 편수 (DLA) - STD 기준
 hourly_delay_count = daily_ramp[daily_ramp['STS'] == 'DLA'].groupby('STD_Hour').size().reindex(range(24), fill_value=0).reset_index(name='Delay_Count')
 
 # 4. 시간별 평균 지연 시간 (분) - STD 기준
@@ -219,9 +227,9 @@ if not daily_weather.empty:
         shared_xaxes=True,
         vertical_spacing=0.03,
         subplot_titles=(
-            "계획된 운항 수 (STD 기준)",   # Row 1
-            "실제 운항 수 (ATD 기준)",     # Row 2
-            "지연(DLA) 편수",              # Row 3
+            "계획된 운항 수 (STD 기준)",   
+            "실제 운항 수 (ATD 기준)",     
+            "지연(DLA) 편수",              
             "평균 지연 시간 (분)", 
             "평균 ATD-RAM (분)",
             "강수량 (mm)",
@@ -233,54 +241,54 @@ if not daily_weather.empty:
         )
     )
 
-    # 1. 계획된 운항 수 (STD 기준)
+    # 1. 계획된 운항 수
     fig.add_trace(go.Bar(x=hourly_planned['STD_Hour'], y=hourly_planned['Planned_Count'], 
                          name="계획된 운항 수", marker_color='navy'), row=1, col=1)
 
-    # 2. 실제 운항 수 (ATD 기준)
+    # 2. 실제 운항 수
     fig.add_trace(go.Bar(x=hourly_actual['ATD_Hour'], y=hourly_actual['Actual_Count'], 
                          name="실제 운항 수", marker_color='teal'), row=2, col=1)
 
-    # 3. 지연 편수 (Bar)
+    # 3. 지연 편수
     fig.add_trace(go.Bar(x=hourly_delay_count['STD_Hour'], y=hourly_delay_count['Delay_Count'], 
                          name="지연 편수", marker_color='red'), row=3, col=1)
 
-    # 4. 평균 지연 시간 (Line)
+    # 4. 평균 지연 시간
     fig.add_trace(go.Scatter(x=hourly_delay_time['STD_Hour'], y=hourly_delay_time['Avg_Delay_Min'], 
                              name="평균 지연 시간", mode='lines+markers', line=dict(color='darkred')), row=4, col=1)
 
-    # 5. ATD-RAM (Line)
+    # 5. ATD-RAM
     fig.add_trace(go.Scatter(x=hourly_atd_ram['STD_Hour'], y=hourly_atd_ram['Avg_ATD_RAM'], 
                              name="평균 ATD-RAM", mode='lines+markers', line=dict(color='purple')), row=5, col=1)
                              
-    # 6. 강수량 (Bar)
+    # 6. 강수량
     precip_data = daily_weather['강수량(mm)'].fillna(0) if '강수량(mm)' in daily_weather.columns else [0]*24
     fig.add_trace(go.Bar(x=daily_weather['Hour'], y=precip_data, 
                          name="강수량", marker_color='cornflowerblue'), row=6, col=1)
 
-    # 7. 풍속 (Line)
+    # 7. 풍속
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['풍속(KT)'], 
                              name="풍속", line=dict(color='orange')), row=7, col=1)
 
-    # 8. 시정 (Area)
+    # 8. 시정
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['시정(m)'], 
                              name="시정", fill='tozeroy', line=dict(color='gray')), row=8, col=1)
                              
-    # 9. 기온 (Line)
+    # 9. 기온
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['기온(°C)'], 
                              name="기온", line=dict(color='green')), row=9, col=1)
 
-    # 10. 상대습도 (Line + Area)
+    # 10. 상대습도
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['상대습도(%)'], 
                              name="상대습도", fill='tozeroy', line=dict(color='deepskyblue')), row=10, col=1)
 
-    # 11. 현지 기압 (Line)
+    # 11. 현지 기압
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['현지기압(hPa)'], 
                              name="기압", line=dict(color='blue')), row=11, col=1)
 
-    # 눈 온 시간대 배경 강조 (하늘색)
+    # 눈 온 시간대 배경 강조
     for h in snow_hours:
-        for row in range(1, 12): # 1~11
+        for row in range(1, 12): 
             fig.add_vrect(
                 x0=h-0.5, x1=h+0.5, 
                 fillcolor="skyblue", 
@@ -307,9 +315,7 @@ with st.expander("📂 원본 데이터 보기"):
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("운항 상세")
-        # 주요 컬럼만 표시
         cols = ['FLT', 'STD', 'STD_Hour', 'ATD', 'ATD_Hour', 'STS', 'Delay_Min', 'ATD-RAM']
-        # 실제 존재하는 컬럼만 선택
         existing_cols = [c for c in cols if c in daily_ramp.columns]
         st.dataframe(daily_ramp[existing_cols])
     with col2:
