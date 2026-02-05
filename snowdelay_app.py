@@ -55,9 +55,9 @@ def load_data(year):
                 
                 # 깨진 컬럼명(BOM) 강제 수정
                 if isinstance(df.columns[0], str) and 'ate' in df.columns[0] and len(df.columns[0]) > 4:
-                     new_cols = list(df.columns)
-                     new_cols[0] = 'Date'
-                     df.columns = new_cols
+                      new_cols = list(df.columns)
+                      new_cols[0] = 'Date'
+                      df.columns = new_cols
                 return df
             except UnicodeDecodeError:
                 continue
@@ -207,16 +207,17 @@ else:
     st.success("☀️ 이 날은 강설 기록이 없습니다.")
 
 if not daily_weather.empty:
-    # 9개의 서브플롯
+    # 10개의 서브플롯 (강수량 추가)
     fig = make_subplots(
-        rows=9, cols=1,
+        rows=10, cols=1,
         shared_xaxes=True,
         vertical_spacing=0.03,
         subplot_titles=(
             "시간당 운항 수 (DEP+DLA)", 
             "지연(DLA) 편수", 
             "평균 지연 시간 (분)", 
-            "평균 ATD-RAM (분)", 
+            "평균 ATD-RAM (분)",
+            "강수량 (mm)",  # [추가]
             "풍속 (KT)", 
             "시정 (m)", 
             "기온 (°C)", 
@@ -240,30 +241,36 @@ if not daily_weather.empty:
     # 4. ATD-RAM (Line)
     fig.add_trace(go.Scatter(x=hourly_atd_ram['Hour'], y=hourly_atd_ram['Avg_ATD_RAM'], 
                              name="평균 ATD-RAM", mode='lines+markers', line=dict(color='purple')), row=4, col=1)
-
-    # 5. 풍속 (Line)
-    fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['풍속(KT)'], 
-                             name="풍속", line=dict(color='orange')), row=5, col=1)
-
-    # 6. 시정 (Area)
-    fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['시정(m)'], 
-                             name="시정", fill='tozeroy', line=dict(color='gray')), row=6, col=1)
                              
-    # 7. 기온 (Line)
+    # 5. [추가] 강수량 (Bar)
+    # 강수량 컬럼이 있는지 확인 후 처리, 없으면 0으로 간주
+    precip_data = daily_weather['강수량(mm)'].fillna(0) if '강수량(mm)' in daily_weather.columns else [0]*24
+    fig.add_trace(go.Bar(x=daily_weather['Hour'], y=precip_data, 
+                         name="강수량", marker_color='cornflowerblue'), row=5, col=1)
+
+    # 6. 풍속 (Line) - row 5 -> 6
+    fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['풍속(KT)'], 
+                             name="풍속", line=dict(color='orange')), row=6, col=1)
+
+    # 7. 시정 (Area) - row 6 -> 7
+    fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['시정(m)'], 
+                             name="시정", fill='tozeroy', line=dict(color='gray')), row=7, col=1)
+                             
+    # 8. 기온 (Line) - row 7 -> 8
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['기온(°C)'], 
-                             name="기온", line=dict(color='green')), row=7, col=1)
+                             name="기온", line=dict(color='green')), row=8, col=1)
 
-    # 8. 상대습도 (Line + Area)
+    # 9. 상대습도 (Line + Area) - row 8 -> 9
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['상대습도(%)'], 
-                             name="상대습도", fill='tozeroy', line=dict(color='deepskyblue')), row=8, col=1)
+                             name="상대습도", fill='tozeroy', line=dict(color='deepskyblue')), row=9, col=1)
 
-    # 9. 현지 기압 (Line)
+    # 10. 현지 기압 (Line) - row 9 -> 10
     fig.add_trace(go.Scatter(x=daily_weather['Hour'], y=daily_weather['현지기압(hPa)'], 
-                             name="기압", line=dict(color='blue')), row=9, col=1)
+                             name="기압", line=dict(color='blue')), row=10, col=1)
 
     # 눈 온 시간대 배경 강조 (하늘색)
     for h in snow_hours:
-        for row in range(1, 10):
+        for row in range(1, 11): # row 1부터 10까지
             fig.add_vrect(
                 x0=h-0.5, x1=h+0.5, 
                 fillcolor="skyblue", 
@@ -272,12 +279,12 @@ if not daily_weather.empty:
             )
 
     # 레이아웃 설정
-    fig.update_layout(height=2000, showlegend=False, hovermode="x unified")
+    fig.update_layout(height=2200, showlegend=False, hovermode="x unified")
     
     # [수정] 모든 x축에 라벨(숫자) 표시 강제 적용
-    fig.update_xaxes(showticklabels=True, title_text=None) # 타이틀은 중복되니 제거하고 숫자만
-    # 맨 마지막 축에만 '시간(Hour)' 타이틀 붙이기
-    fig.update_xaxes(title_text="시간 (Hour)", row=9, col=1)
+    fig.update_xaxes(showticklabels=True, title_text=None) 
+    # 맨 마지막 축(10번째)에만 '시간(Hour)' 타이틀 붙이기
+    fig.update_xaxes(title_text="시간 (Hour)", row=10, col=1)
     
     # 모든 x축 범위 고정
     fig.update_xaxes(range=[-0.5, 23.5])
@@ -296,6 +303,8 @@ with st.expander("📂 원본 데이터 보기"):
         st.dataframe(daily_ramp[['FLT', 'STD', 'RAM', 'ATD', 'Delay_Min','ATD-RAM', 'STS']])
     with col2:
         st.subheader("시간별 기상 상세")
-        st.dataframe(daily_weather[['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '상대습도(%)', '현지기압(hPa)', '강수량(mm)']])
-
-
+        # 컬럼 존재 여부 확인 후 표시
+        weather_cols = ['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '상대습도(%)', '현지기압(hPa)']
+        if '강수량(mm)' in daily_weather.columns:
+            weather_cols.append('강수량(mm)')
+        st.dataframe(daily_weather[weather_cols])
