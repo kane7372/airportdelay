@@ -301,46 +301,4 @@ with st.expander("📂 원본 데이터 보기"):
         if '강수량(mm)' in d_weather.columns: w_cols.append('강수량(mm)')
         st.dataframe(d_weather[w_cols])
 # -----------------------------------------------------------
-# 8. 주기장 PDF 차트 표시
-import streamlit as st
-import base64
-import os  # 파일 경로 확인을 위해 추가
-
-def show_pdf_robust(file_path):
-    # 1. 서버(폴더)에 파일이 실제로 존재하는지 확인
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, "rb") as f:
-                base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-            
-            # iframe을 이용하여 PDF 렌더링
-            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
-            st.markdown(pdf_display, unsafe_allow_html=True)
-            
-        except Exception as e:
-            st.error(f"PDF를 표시하는 중 오류가 발생했습니다: {e}")
-            
-    else:
-        # 2. 파일이 없으면 경고 메시지와 함께 '파일 업로드' 버튼 표시
-        st.warning(f"⚠️ 서버에서 파일을 찾을 수 없습니다: {file_path}")
-        st.info("파일이 같은 폴더에 없는 것 같습니다. 아래 버튼을 눌러 PDF 파일을 직접 업로드해주세요.")
-        
-        uploaded_pdf = st.file_uploader("PDF 차트 업로드", type="pdf", key="pdf_uploader")
-        
-        if uploaded_pdf is not None:
-            try:
-                # 업로드된 파일 읽기
-                base64_pdf = base64.b64encode(uploaded_pdf.read()).decode('utf-8')
-                pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
-                st.markdown(pdf_display, unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"업로드된 파일을 읽는 중 오류가 발생했습니다: {e}")
-
-# PDF 파일 이름 설정 (파일명이 정확한지 다시 한번 확인하세요)
-PDF_FILE_PATH = "(2-3) AIRCRAFT PARKING DOCKING CHART_pg1.pdf"
-
-st.markdown("---")
-# expander를 사용하여 깔끔하게 접고 펼치기
-with st.expander("🗺️ 공항 주기장 차트 (PDF) 보기", expanded=True):
-    show_pdf_robust(PDF_FILE_PATH)
 
