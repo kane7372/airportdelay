@@ -182,37 +182,37 @@ precip_data = d_weather['강수량(mm)'].fillna(0) if '강수량(mm)' in d_weath
 # -----------------------------------------------------------
 # 모든 가능한 그래프의 정의를 딕셔너리로 만듭니다.
 GRAPH_CONFIG = {
-    "계획된 운항 수 (STD)": {
+    "시간당 계획된 운항 수 (STD)": {
         "x": h_planned['STD_Hour'], "y": h_planned['Planned_Count'], "type": "bar", "color": "navy"
     },
-    "실제 운항 수 (ATD)": {
+    "시간당 실제 운항 수 (ATD)": {
         "x": h_actual['ATD_Hour'], "y": h_actual['Actual_Count'], "type": "bar", "color": "teal"
     },
-    "지연 편수 (DLA)": {
+    "시간당 지연 편수 (DLA)": {
         "x": h_delay_count['STD_Hour'], "y": h_delay_count['Delay_Count'], "type": "bar", "color": "red"
     },
-    "평균 지연 시간 (분)": {
+    "시간당 평균 지연 (분)": {
         "x": h_delay_time['STD_Hour'], "y": h_delay_time['Avg_Delay_Min'], "type": "line", "color": "darkred"
     },
-    "평균 ATD-RAM (분)": {
+    "시간당 평균 지상이동 (분)": {
         "x": h_atd_ram['STD_Hour'], "y": h_atd_ram['Avg_ATD_RAM'], "type": "line", "color": "purple"
     },
-    "강수량 (mm)": {
+    "시간당 강수량 (mm)": {
         "x": d_weather['Hour'], "y": precip_data, "type": "bar", "color": "cornflowerblue"
     },
-    "풍속 (KT)": {
+    "시간당 풍속 (KT)": {
         "x": d_weather['Hour'], "y": d_weather['풍속(KT)'], "type": "line", "color": "orange"
     },
-    "시정 (m)": {
+    "시간당 시정 (m)": {
         "x": d_weather['Hour'], "y": d_weather['시정(m)'], "type": "area", "color": "gray"
     },
-    "기온 (°C)": {
+    "시간당 기온 (°C)": {
         "x": d_weather['Hour'], "y": d_weather['기온(°C)'], "type": "line", "color": "green"
     },
-    "상대습도 (%)": {
+    "시간당 상대습도 (%)": {
         "x": d_weather['Hour'], "y": d_weather['상대습도(%)'], "type": "area", "color": "deepskyblue"
     },
-    "현지 기압 (hPa)": {
+    "시간당 현지 기압 (hPa)": {
         "x": d_weather['Hour'], "y": d_weather['현지기압(hPa)'], "type": "line", "color": "blue"
     }
 }
@@ -301,4 +301,5 @@ with st.expander("📂 원본 데이터 보기"):
         if '강수량(mm)' in d_weather.columns: w_cols.append('강수량(mm)')
         st.dataframe(d_weather[w_cols])
 # -----------------------------------------------------------
+
 
