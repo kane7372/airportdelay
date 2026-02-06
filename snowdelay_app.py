@@ -4,6 +4,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
+import base64
+import os
 
 # -----------------------------------------------------------
 # [설정] 연도별 파일 이름 매핑
@@ -25,6 +27,9 @@ DATA_FILES = {
         "snow": "snow_AMOS_RKSI_2025.csv"
     }
 }
+
+# PDF 파일 경로
+PDF_FILE_PATH = "(2-3) AIRCRAFT PARKING DOCKING CHART_pg1.pdf"
 
 # -----------------------------------------------------------
 # 1. 페이지 설정
@@ -149,6 +154,29 @@ exclude_no_std_actual = st.sidebar.checkbox("실제 운항 수에서 계획(STD)
 exclude_no_std_delay = st.sidebar.checkbox("지연 편수에서 계획(STD) 없는 편 제외", value=False)
 
 # -----------------------------------------------------------
+# [NEW] 기상 현상 하이라이트 설정 (ww 코드 기반)
+# -----------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.subheader("🎨 기상 형광펜 (배경색)")
+
+# 기상 코드 및 색상 정의
+WEATHER_HIGHLIGHTS = {
+    "안개/빙무 (40-49)": {"range": range(40, 50), "color": "lightgray"},
+    "안개비 (50-59)": {"range": range(50, 60), "color": "lightblue"},
+    "비 (60-67)": {"range": range(60, 68), "color": "dodgerblue"},
+    "진눈깨비 (68-69)": {"range": range(68, 70), "color": "lightgreen"}, # 요청하신 색상
+    "강설 (70-79)": {"range": range(70, 80), "color": "skyblue"},
+    "소낙성/뇌전 (80-99)": {"range": range(80, 100), "color": "mediumpurple"},
+}
+
+# 멀티셀렉트로 사용자 선택 받기 (기본값: 진눈깨비, 강설)
+selected_highlights = st.sidebar.multiselect(
+    "배경색으로 표시할 기상 현상 선택",
+    options=list(WEATHER_HIGHLIGHTS.keys()),
+    default=["진눈깨비 (68-69)", "강설 (70-79)"]
+)
+
+# -----------------------------------------------------------
 # 4. 데이터 필터링 및 집계
 # -----------------------------------------------------------
 d_weather = df_weather[(df_weather['Month'] == selected_month) & (df_weather['Day'] == selected_day)]
@@ -176,13 +204,6 @@ h_atd_ram = d_ramp[d_ramp['ATD-RAM'].notnull()].groupby('STD_Hour')['ATD-RAM'].m
 
 # (5) 강수량 데이터 준비
 precip_data = d_weather['강수량(mm)'].fillna(0) if '강수량(mm)' in d_weather.columns else [0]*24
-
-# (6) 진눈깨비 데이터 준비 (일기현상 68, 69)
-# 안전하게 숫자로 변환 후 비교
-sleet_hours = []
-if '일기현상' in d_weather.columns:
-    # NaN은 0으로 채우고, 정수형으로 변환 후 코드 확인
-    sleet_hours = d_weather[d_weather['일기현상'].fillna(0).astype(int).isin([68, 69])]['Hour'].unique()
 
 # -----------------------------------------------------------
 # 5. 그래프 정의 및 순서 설정
@@ -225,11 +246,11 @@ GRAPH_CONFIG = {
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 그래프 순서 및 표시 설정")
-st.sidebar.info("아래 목록에서 순서를 바꾸면 그래프 순서가 변경됩니다. 항목을 삭제하면 그래프가 숨겨집니다.")
+st.sidebar.info("아래 목록에서 순서를 바꾸면 그래프 순서가 변경됩니다.")
 
 default_order = list(GRAPH_CONFIG.keys())
 selected_graphs = st.sidebar.multiselect(
-    "그래프 순서 변경 (드래그하여 순서 조정 가능)",
+    "그래프 순서 변경",
     options=default_order,
     default=default_order
 )
@@ -239,18 +260,23 @@ selected_graphs = st.sidebar.multiselect(
 # -----------------------------------------------------------
 st.header(f"📊 {selected_year}년 {selected_month}월 {selected_day}일 상세 분석")
 
-# 눈 관측 정보
-snow_hours = d_snow['Hour'].unique()
-if len(snow_hours) > 0:
-    snow_clean = [int(h) for h in sorted(snow_hours)]
-    st.info(f"❄️ 강설 관측: {snow_clean}시 (하늘색 배경)")
-else:
-    st.success("☀️ 강설 없음")
+# (옵션) 상단 알림 메시지: 선택된 기상 현상이 있는 경우 표시
+detected_weather = []
+if '일기현상' in d_weather.columns:
+    ww_codes = d_weather['일기현상'].fillna(0).astype(int)
+    for name in selected_highlights:
+        conf = WEATHER_HIGHLIGHTS[name]
+        # 해당 현상이 관측된 시간 확인
+        hours = d_weather[ww_codes.isin(conf['range'])]['Hour'].unique()
+        if len(hours) > 0:
+            h_str = ", ".join([str(int(h)) for h in sorted(hours)])
+            detected_weather.append(f"**{name.split('(')[0].strip()}**: {h_str}시")
 
-# 진눈깨비 관측 정보 (New)
-if len(sleet_hours) > 0:
-    sleet_clean = [int(h) for h in sorted(sleet_hours)]
-    st.info(f"🌨️ 진눈깨비(68,69) 관측: {sleet_clean}시 (연두색 배경)")
+if detected_weather:
+    st.info("📢 선택한 기상 현상 관측됨: " + " / ".join(detected_weather))
+else:
+    if selected_highlights:
+        st.success("☀️ 선택한 기상 현상이 관측되지 않았습니다.")
 
 if not d_weather.empty and selected_graphs:
     rows_count = len(selected_graphs)
@@ -272,23 +298,25 @@ if not d_weather.empty and selected_graphs:
         elif conf['type'] == 'area':
             fig.add_trace(go.Scatter(x=conf['x'], y=conf['y'], name=graph_name, fill='tozeroy', line=dict(color=conf['color'])), row=row_idx, col=1)
 
-    # 1. 눈 온 시간대 배경 (하늘색)
-    for h in snow_hours:
-        for r in range(1, rows_count + 1):
-            fig.add_vrect(
-                x0=h-0.5, x1=h+0.5, 
-                fillcolor="skyblue", opacity=0.3, 
-                layer="below", line_width=0, row=r, col=1
-            )
+    # -------------------------------------------------------
+    # [핵심] 선택된 기상 현상 배경색(Highlight) 적용
+    # -------------------------------------------------------
+    if '일기현상' in d_weather.columns:
+        ww_codes = d_weather['일기현상'].fillna(0).astype(int)
+        
+        for hl_name in selected_highlights:
+            hl_conf = WEATHER_HIGHLIGHTS[hl_name]
+            # 해당 현상이 있는 시간대 찾기
+            target_hours = d_weather[ww_codes.isin(hl_conf['range'])]['Hour'].unique()
             
-    # 2. 진눈깨비 시간대 배경 (연두색, New)
-    for h in sleet_hours:
-        for r in range(1, rows_count + 1):
-            fig.add_vrect(
-                x0=h-0.5, x1=h+0.5, 
-                fillcolor="lightgreen", opacity=0.3, 
-                layer="below", line_width=0, row=r, col=1
-            )
+            for h in target_hours:
+                for r in range(1, rows_count + 1):
+                    fig.add_vrect(
+                        x0=h-0.5, x1=h+0.5, 
+                        fillcolor=hl_conf['color'], 
+                        opacity=0.3, 
+                        layer="below", line_width=0, row=r, col=1
+                    )
 
     fig.update_layout(height=200 * rows_count + 200, showlegend=False, hovermode="x unified")
     fig.update_xaxes(showticklabels=True, title_text=None)
@@ -297,12 +325,36 @@ if not d_weather.empty and selected_graphs:
 
     st.plotly_chart(fig, use_container_width=True)
 elif not selected_graphs:
-    st.warning("선택된 그래프가 없습니다. 사이드바에서 그래프를 선택해주세요.")
+    st.warning("선택된 그래프가 없습니다.")
 else:
     st.warning("기상 데이터가 없습니다.")
 
 # -----------------------------------------------------------
-# 7. 하단 데이터 테이블
+# 7. PDF 보기 (하단)
+# -----------------------------------------------------------
+# def show_pdf_robust(file_path):
+#    if os.path.exists(file_path):
+#        try:
+#            with open(file_path, "rb") as f:
+#                base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+#            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+#            st.markdown(pdf_display, unsafe_allow_html=True)
+#        except Exception as e:
+#            st.error(f"PDF 오류: {e}")
+#    else:
+#        st.warning(f"⚠️ 파일 없음: {file_path}")
+#        uploaded_pdf = st.file_uploader("PDF 업로드", type="pdf", key="pdf_up")
+#        if uploaded_pdf:
+#            base64_pdf = base64.b64encode(uploaded_pdf.read()).decode('utf-8')
+#            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+#            st.markdown(pdf_display, unsafe_allow_html=True)
+
+# st.markdown("---")
+# with st.expander("🗺️ 공항 주기장 차트 (PDF) 보기", expanded=False):
+#    show_pdf_robust(PDF_FILE_PATH)
+
+# -----------------------------------------------------------
+# 8. 하단 데이터 테이블
 # -----------------------------------------------------------
 with st.expander("📂 원본 데이터 보기"):
     c1, c2 = st.columns(2)
@@ -313,7 +365,6 @@ with st.expander("📂 원본 데이터 보기"):
         st.dataframe(d_ramp[exist])
     with c2:
         st.subheader("기상 상세")
-        # 일기현상 컬럼 추가하여 확인 가능하도록 변경
         w_cols = ['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '상대습도(%)', '현지기압(hPa)']
         if '강수량(mm)' in d_weather.columns: w_cols.append('강수량(mm)')
         if '일기현상' in d_weather.columns: w_cols.append('일기현상')
