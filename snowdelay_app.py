@@ -177,10 +177,16 @@ h_atd_ram = d_ramp[d_ramp['ATD-RAM'].notnull()].groupby('STD_Hour')['ATD-RAM'].m
 # (5) 강수량 데이터 준비
 precip_data = d_weather['강수량(mm)'].fillna(0) if '강수량(mm)' in d_weather.columns else [0]*24
 
+# (6) 진눈깨비 데이터 준비 (일기현상 68, 69)
+# 안전하게 숫자로 변환 후 비교
+sleet_hours = []
+if '일기현상' in d_weather.columns:
+    # NaN은 0으로 채우고, 정수형으로 변환 후 코드 확인
+    sleet_hours = d_weather[d_weather['일기현상'].fillna(0).astype(int).isin([68, 69])]['Hour'].unique()
+
 # -----------------------------------------------------------
-# 5. 그래프 정의 및 순서 설정 (Drag & Drop 대안)
+# 5. 그래프 정의 및 순서 설정
 # -----------------------------------------------------------
-# 모든 가능한 그래프의 정의를 딕셔너리로 만듭니다.
 GRAPH_CONFIG = {
     "시간당 계획된 운항 수 (STD)": {
         "x": h_planned['STD_Hour'], "y": h_planned['Planned_Count'], "type": "bar", "color": "navy"
@@ -221,10 +227,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📊 그래프 순서 및 표시 설정")
 st.sidebar.info("아래 목록에서 순서를 바꾸면 그래프 순서가 변경됩니다. 항목을 삭제하면 그래프가 숨겨집니다.")
 
-# 기본 순서 정의
 default_order = list(GRAPH_CONFIG.keys())
-
-# 멀티셀렉트로 순서 변경 UI 제공
 selected_graphs = st.sidebar.multiselect(
     "그래프 순서 변경 (드래그하여 순서 조정 가능)",
     options=default_order,
@@ -236,6 +239,7 @@ selected_graphs = st.sidebar.multiselect(
 # -----------------------------------------------------------
 st.header(f"📊 {selected_year}년 {selected_month}월 {selected_day}일 상세 분석")
 
+# 눈 관측 정보
 snow_hours = d_snow['Hour'].unique()
 if len(snow_hours) > 0:
     snow_clean = [int(h) for h in sorted(snow_hours)]
@@ -243,8 +247,12 @@ if len(snow_hours) > 0:
 else:
     st.success("☀️ 강설 없음")
 
+# 진눈깨비 관측 정보 (New)
+if len(sleet_hours) > 0:
+    sleet_clean = [int(h) for h in sorted(sleet_hours)]
+    st.info(f"🌨️ 진눈깨비(68,69) 관측: {sleet_clean}시 (연두색 배경)")
+
 if not d_weather.empty and selected_graphs:
-    # 선택된 그래프 개수에 맞춰 서브플롯 생성
     rows_count = len(selected_graphs)
     fig = make_subplots(
         rows=rows_count, cols=1,
@@ -253,7 +261,6 @@ if not d_weather.empty and selected_graphs:
         subplot_titles=selected_graphs
     )
 
-    # 선택된 순서대로 그래프 추가
     for i, graph_name in enumerate(selected_graphs):
         conf = GRAPH_CONFIG[graph_name]
         row_idx = i + 1
@@ -265,12 +272,21 @@ if not d_weather.empty and selected_graphs:
         elif conf['type'] == 'area':
             fig.add_trace(go.Scatter(x=conf['x'], y=conf['y'], name=graph_name, fill='tozeroy', line=dict(color=conf['color'])), row=row_idx, col=1)
 
-    # 눈 온 시간대 배경 (모든 서브플롯에 적용)
+    # 1. 눈 온 시간대 배경 (하늘색)
     for h in snow_hours:
         for r in range(1, rows_count + 1):
             fig.add_vrect(
                 x0=h-0.5, x1=h+0.5, 
                 fillcolor="skyblue", opacity=0.3, 
+                layer="below", line_width=0, row=r, col=1
+            )
+            
+    # 2. 진눈깨비 시간대 배경 (연두색, New)
+    for h in sleet_hours:
+        for r in range(1, rows_count + 1):
+            fig.add_vrect(
+                x0=h-0.5, x1=h+0.5, 
+                fillcolor="lightgreen", opacity=0.3, 
                 layer="below", line_width=0, row=r, col=1
             )
 
@@ -297,9 +313,8 @@ with st.expander("📂 원본 데이터 보기"):
         st.dataframe(d_ramp[exist])
     with c2:
         st.subheader("기상 상세")
+        # 일기현상 컬럼 추가하여 확인 가능하도록 변경
         w_cols = ['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '상대습도(%)', '현지기압(hPa)']
         if '강수량(mm)' in d_weather.columns: w_cols.append('강수량(mm)')
+        if '일기현상' in d_weather.columns: w_cols.append('일기현상')
         st.dataframe(d_weather[w_cols])
-# -----------------------------------------------------------
-
-
