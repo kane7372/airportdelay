@@ -300,3 +300,24 @@ with st.expander("📂 원본 데이터 보기"):
         w_cols = ['Hour', '풍속(KT)', '시정(m)', '기온(°C)', '상대습도(%)', '현지기압(hPa)']
         if '강수량(mm)' in d_weather.columns: w_cols.append('강수량(mm)')
         st.dataframe(d_weather[w_cols])
+# -----------------------------------------------------------
+# 8. 주기장 PDF 차트 표시 (New)
+# -----------------------------------------------------------
+def show_pdf(file_path):
+    try:
+        with open(file_path, "rb") as f:
+            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+        # iframe을 이용하여 PDF 렌더링
+        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+        st.markdown(pdf_display, unsafe_allow_html=True)
+    except FileNotFoundError:
+        st.error(f"PDF 파일을 찾을 수 없습니다: {file_path}")
+    except Exception as e:
+        st.error(f"PDF를 표시하는 중 오류가 발생했습니다: {e}")
+
+# 하단에 확장 메뉴로 PDF 보기 기능 추가
+st.markdown("---")
+with st.expander("🗺️ 공항 주기장 차트 (PDF) 보기", expanded=False):
+    show_pdf(PDF_FILE_PATH)
+
+# -----------------------------------------------------------
