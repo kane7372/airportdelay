@@ -6,8 +6,9 @@ from datetime import datetime, timedelta
 import altair as alt
 import os
 import glob
+import numpy as np
 
-st.set_page_config(page_title="Incheon Airport Ultimate Flight & Weather Final", layout="wide")
+st.set_page_config(page_title="Incheon Airport Statistical Analysis", layout="wide")
 
 # ==========================================
 # 1. 데이터 로드 (Flight + Weather)
@@ -91,15 +92,36 @@ def load_data():
     df_flight['Ramp_Delay'] = res[2]
     df_flight['Taxi_Time'] = res[3]
     
-    def classify_delay(row):
-        if row['Ramp_Delay'] < 15 and row['Taxi_Time'] < 25: return 'Normal'
-        if row['Ramp_Delay'] >= 15 and row['Taxi_Time'] < 30: return 'Ramp (Gate)'
-        elif row['Taxi_Time'] >= 30:
-            if row['Ramp_Delay'] > (row['Taxi_Time'] - 20): return 'Ramp (Gate)'
-            else: return 'Taxi (Ground)'
-        else: return 'Ramp (Gate)'
+    # --- Statistical Thresholding for Taxi Time ---
+    # Group by Year-Month
+    df_flight['YM'] = df_flight['STD_Full'].dt.to_period('M')
+    
+    # Calculate Stats per Month
+    stats = df_flight.groupby('YM')['Taxi_Time'].agg(['mean', 'std']).reset_index()
+    stats['Limit_1Sigma'] = stats['mean'] + stats['std']
+    stats['Limit_2Sigma'] = stats['mean'] + 2 * stats['std']
+    stats['Limit_3Sigma'] = stats['mean'] + 3 * stats['std']
+    
+    # Merge Stats back to Flight Data
+    df_flight = pd.merge(df_flight, stats, on='YM', how='left')
+    
+    def classify_delay_stat(row):
+        # 1. Gate Delay (Absolute 15 min)
+        if row['Ramp_Delay'] >= 15:
+            return 'Ramp (Gate)'
+            
+        # 2. Taxi Delay (Statistical > 1 Sigma)
+        # Check if stats are valid
+        if pd.notna(row['Limit_1Sigma']):
+            if row['Taxi_Time'] > row['Limit_1Sigma']:
+                return 'Taxi (Ground)'
+        elif row['Taxi_Time'] >= 30: # Fallback if stats fail
+            return 'Taxi (Ground)'
+            
+        return 'Normal'
 
-    df_flight['Delay_Cause'] = df_flight.apply(classify_delay, axis=1)
+    df_flight['Delay_Cause'] = df_flight.apply(classify_delay_stat, axis=1)
+    
     df_merged = pd.merge(df_flight, df_zone, left_on='SPT', right_on='Stand_ID', how='inner')
 
     # --- Preprocessing Weather Data ---
@@ -125,14 +147,14 @@ def load_data():
             else: return "기타"
         df_weather['Weather_Desc'] = df_weather['W_Code'].apply(parse_weather_code)
         
-    return df_merged, df_weather, "Success"
+    return df_merged, df_weather, stats, "Success"
 
-flights, weather, msg = load_data()
+flights, weather, taxi_stats, msg = load_data()
 
 # ==========================================
 # 2. UI & Interaction
 # ==========================================
-st.title("🛫 인천공항 운항 & 기상 통합 분석")
+st.title("🛫 인천공항 통계 기반 지연 분석 (Mean/Sigma)")
 
 if flights is None:
     st.error(msg)
@@ -161,7 +183,6 @@ if weather is not None and not weather.empty:
     w_row = weather[weather['DT'] == target_dt]
     if not w_row.empty: cur_weather = w_row.iloc[0]
 
-# Helper for Wind Direction
 def get_cardinal(deg):
     if pd.isna(deg): return ""
     dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
@@ -169,7 +190,7 @@ def get_cardinal(deg):
     return dirs[idx]
 
 # ==========================================
-# 3. Dashboard Header (Updated)
+# 3. Dashboard Header
 # ==========================================
 st.subheader(f"⏱️ {time_basis} 기준 | {sel_date} {sel_hour}:00")
 
@@ -178,29 +199,53 @@ c1.metric("대상 편수", f"{len(map_flights)}")
 c2.metric("기온", f"{cur_weather['Temp']}°C" if cur_weather is not None else "-")
 c3.metric("시정", f"{cur_weather['Visibility']:.0f}m" if cur_weather is not None else "-")
 
-# Wind Info
-if cur_weather is not None and pd.notna(cur_weather['Wind_Dir']):
-    wd = cur_weather['Wind_Dir']
-    ws = cur_weather['Wind_Spd']
-    cardinal = get_cardinal(wd)
-    wind_str = f"{ws}kt ({wd:.0f}° {cardinal})"
-    c4.metric("풍속/풍향", wind_str)
-else:
-    c4.metric("풍속/풍향", "-")
+wd, ws = cur_weather['Wind_Dir'] if cur_weather is not None else None, cur_weather['Wind_Spd'] if cur_weather is not None else None
+wind_str = f"{ws}kt ({wd:.0f}° {get_cardinal(wd)})" if wd is not None else "-"
+c4.metric("풍속/풍향", wind_str)
 
 w_desc = cur_weather['Weather_Desc'] if cur_weather is not None else "-"
 c5.metric("기상 현상", w_desc)
 c6.metric("강수량", f"{cur_weather['Precip']}mm" if cur_weather is not None else "-")
 
 # ==========================================
-# 4. Scatter Plot (Analysis)
+# 4. Statistical Analysis Table
 # ==========================================
 st.divider()
-st.markdown("##### 📈 지연 원인 분석 (Ramp vs Taxi)")
+st.markdown("##### 📊 월별 Taxi Time 통계 기준표 (Sigma Analysis)")
+
+if taxi_stats is not None:
+    # Formatting
+    disp_stats = taxi_stats.copy()
+    disp_stats['YM'] = disp_stats['YM'].astype(str)
+    disp_stats = disp_stats.rename(columns={
+        'YM': '연월', 'mean': '평균 (분)', 'std': '표준편차',
+        'Limit_1Sigma': '1σ (주의)', 'Limit_2Sigma': '2σ (경고)', 'Limit_3Sigma': '3σ (심각)'
+    })
+    st.dataframe(disp_stats.style.format({
+        '평균 (분)': '{:.1f}', '표준편차': '{:.1f}',
+        '1σ (주의)': '{:.1f}', '2σ (경고)': '{:.1f}', '3σ (심각)': '{:.1f}'
+    }), hide_index=True, use_container_width=True)
+    
+    # Current Month Info
+    curr_ym = pd.Period(sel_date, freq='M')
+    curr_stat = taxi_stats[taxi_stats['YM'] == curr_ym]
+    if not curr_stat.empty:
+        limit = curr_stat.iloc[0]['Limit_1Sigma']
+        st.info(f"💡 **{curr_ym}월 Taxi 기준:** 평균 {curr_stat.iloc[0]['mean']:.1f}분 + 1σ ({curr_stat.iloc[0]['std']:.1f}) = **{limit:.1f}분** 초과시 지연으로 간주")
+
+# ==========================================
+# 5. Scatter Plot (Analysis)
+# ==========================================
+st.divider()
+st.markdown("##### 📈 지연 원인 분석 (통계 기준 적용)")
 
 col_chart, col_dummy = st.columns([3, 1])
 with col_chart:
     if not day_flights.empty:
+        # Dynamic Rule based on selected month
+        current_limit = 30 # default
+        if not curr_stat.empty: current_limit = curr_stat.iloc[0]['Limit_1Sigma']
+        
         scatter = alt.Chart(day_flights).mark_circle(size=60).encode(
             x=alt.X('Ramp_Delay', title='주기장 지연 (분)'),
             y=alt.Y('Taxi_Time', title='지상 이동 시간 (분)'),
@@ -210,35 +255,34 @@ with col_chart:
                             legend=alt.Legend(title="지연 원인")),
             tooltip=['FLT', 'SPT', 'Delay_Cause', 'Ramp_Delay', 'Taxi_Time']
         ).interactive()
-        st.altair_chart(scatter, use_container_width=True)
+        
+        # Add Threshold Lines
+        rule_taxi = alt.Chart(pd.DataFrame({'y': [current_limit]})).mark_rule(color='orange', strokeDash=[3,3]).encode(y='y')
+        rule_ramp = alt.Chart(pd.DataFrame({'x': [15]})).mark_rule(color='red', strokeDash=[3,3]).encode(x='x')
+        
+        st.altair_chart(scatter + rule_taxi + rule_ramp, use_container_width=True)
     else:
         st.info("데이터 없음")
 
 with col_dummy:
     st.info("💡 **가이드**")
-    st.write("- **X축:** 램프 지연 (출발 지연)")
-    st.write("- **Y축:** 램프 아웃 후 이륙까지 소요 시간")
-    st.write("- <span style='color:red'>●</span> 주기장 지연 (Ramp Issue)", unsafe_allow_html=True)
-    st.write("- <span style='color:orange'>●</span> 이동 지연 (Taxi Issue)", unsafe_allow_html=True)
+    st.write("- **X축 (Ramp):** 15분 이상이면 <span style='color:red'>Red (Gate)</span>", unsafe_allow_html=True)
+    st.write(f"- **Y축 (Taxi):** {current_limit:.1f}분(1σ) 초과시 <span style='color:orange'>Orange (Ground)</span>")
 
 # ==========================================
-# 5. Map Visualization
+# 6. Map Visualization
 # ==========================================
 st.divider()
 st.markdown(f"##### 🗺️ {time_basis} 기준 주기장 현황")
 
 m = folium.Map(location=[37.46, 126.44], zoom_start=13)
-
-# 🚀 활주로 좌표 (16/34 포함)
 runways = {
     '33L': (37.4541, 126.4608), '15R': (37.4816, 126.4363),
     '33R': (37.4563, 126.4647), '15L': (37.4838, 126.4402),
     '34L': (37.4411, 126.4377), '16R': (37.4680, 126.4130),
     '34R': (37.4433, 126.4416), '16L': (37.4700, 126.4170)
 }
-
-for r, c in runways.items(): 
-    folium.Marker(c, popup=r, icon=folium.Icon(color='gray', icon='plane')).add_to(m)
+for r, c in runways.items(): folium.Marker(c, popup=r, icon=folium.Icon(color='gray', icon='plane')).add_to(m)
 
 color_dict = {'Normal': 'green', 'Ramp (Gate)': 'red', 'Taxi (Ground)': 'orange'}
 
@@ -246,7 +290,12 @@ for _, row in map_flights.iterrows():
     color = color_dict.get(row['Delay_Cause'], 'blue')
     time_str = row[target_col].strftime('%H:%M')
     
-    popup = f"<b>{row['FLT']}</b><br>{time_basis}: {time_str}<br>Delay: {row['Delay_Cause']}"
+    # Calculate Sigma Level for Tooltip
+    sigma_level = 0
+    if pd.notna(row['mean']) and pd.notna(row['std']) and row['std'] > 0:
+        sigma_level = (row['Taxi_Time'] - row['mean']) / row['std']
+    
+    popup = f"<b>{row['FLT']}</b><br>Delay: {row['Delay_Cause']}<br>Ramp: {row['Ramp_Delay']:.0f}m<br>Taxi: {row['Taxi_Time']:.0f}m ({sigma_level:.1f}σ)"
     folium.Marker(
         [row['Lat'], row['Lon']], popup=popup, tooltip=f"{row['FLT']}",
         icon=folium.Icon(color=color, icon='plane', prefix='fa')
@@ -255,7 +304,7 @@ for _, row in map_flights.iterrows():
 st_folium(m, width="100%", height=700)
 
 # ==========================================
-# 6. Weather Trend
+# 7. Weather Trend
 # ==========================================
 if weather is not None:
     st.divider()
