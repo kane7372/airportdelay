@@ -60,7 +60,7 @@ def load_data():
     # Calculate Times & Delays
     def calc_all_times(row):
         std = row['STD_Full']
-        if pd.isna(std): return pd.NaT, pd.NaT, 0, 0
+        if pd.isna(std): return pd.NaT, pd.NaT, 0, 0, 0
         
         # RAM Parsing
         ram_dt = pd.NaT
@@ -85,48 +85,58 @@ def load_data():
         # Metrics Calculation
         ramp_delay = 0
         taxi_time = 0
+        total_delay = 0
+        
+        # Total Delay: ATD - STD
+        if not pd.isna(atd_dt):
+            total_delay = (atd_dt - std).total_seconds() / 60
         
         # Ramp Delay
         if not pd.isna(ram_dt):
             ramp_delay = (ram_dt - std).total_seconds() / 60
             
-        # Taxi Time Preference: 1. ATD-RAM col, 2. Calc (ATD - RAM)
+        # Taxi Time
         if 'ATD-RAM' in row and pd.notna(row['ATD-RAM']):
              try: taxi_time = float(row['ATD-RAM'])
              except: taxi_time = 0
         elif not pd.isna(atd_dt) and not pd.isna(ram_dt):
             taxi_time = (atd_dt - ram_dt).total_seconds() / 60
              
-        return ram_dt, atd_dt, ramp_delay, taxi_time
+        return ram_dt, atd_dt, ramp_delay, taxi_time, total_delay
 
     res = df_flight.apply(calc_all_times, axis=1, result_type='expand')
     df_flight['RAM_Full'] = res[0]
     df_flight['ATD_Full'] = res[1]
     df_flight['Ramp_Delay'] = res[2]
     df_flight['Taxi_Time'] = res[3]
+    df_flight['Total_Delay'] = res[4]
     
     # --- Statistical Thresholding ---
     df_flight['YM'] = df_flight['STD_Full'].dt.to_period('M')
     
-    # Calculate Stats (filtering out 0 taxi times which might be errors)
     valid_taxi = df_flight[df_flight['Taxi_Time'] > 0]
     stats = valid_taxi.groupby('YM')['Taxi_Time'].agg(['mean', 'std']).reset_index()
     stats['Limit_1Sigma'] = stats['mean'] + stats['std']
-    stats['Limit_2Sigma'] = stats['mean'] + 2 * stats['std']
-    stats['Limit_3Sigma'] = stats['mean'] + 3 * stats['std']
     
-    # Merge Stats
     df_flight = pd.merge(df_flight, stats, on='YM', how='left')
     
     def classify_delay_stat(row):
-        # 1. Gate Delay
+        # 1. Total Delay Condition (Primary)
+        if row['Total_Delay'] <= 15:
+            return 'Normal'
+            
+        # 2. If Delayed, Determine Cause (Secondary)
         if row['Ramp_Delay'] >= 15:
             return 'Ramp (Gate)'
-        # 2. Taxi Delay
+            
+        # Check Sigma Limit for Taxi
         limit = row['Limit_1Sigma'] if pd.notna(row['Limit_1Sigma']) else 30
         if row['Taxi_Time'] > limit:
             return 'Taxi (Ground)'
-        return 'Normal'
+            
+        # Fallback if both seem normal but total > 15 (e.g. Ramp 10, Taxi slightly high)
+        # Default to Taxi as it implies delay happened after Pushback
+        return 'Taxi (Ground)'
 
     df_flight['Delay_Cause'] = df_flight.apply(classify_delay_stat, axis=1)
     df_merged = pd.merge(df_flight, df_zone, left_on='SPT', right_on='Stand_ID', how='inner')
@@ -161,7 +171,7 @@ flights, weather, taxi_stats, msg = load_data()
 # ==========================================
 # 2. UI & Interaction
 # ==========================================
-st.title("🛫 인천공항 통계 기반 지연 분석 (v5 Final)")
+st.title("🛫 인천공항 통계 기반 지연 분석 (Final)")
 
 if flights is None:
     st.error(msg)
@@ -219,43 +229,35 @@ c6.metric("강수량", f"{cur_weather['Precip']}mm" if cur_weather is not None e
 st.divider()
 st.markdown("##### 📊 월별 Taxi Time 통계 기준표 (Sigma Analysis)")
 
-current_limit = 30.0 # Default Fallback
+current_limit = 30.0 
 
 if taxi_stats is not None:
-    # Formatting
     disp_stats = taxi_stats.copy()
     disp_stats['YM'] = disp_stats['YM'].astype(str)
     disp_stats = disp_stats.rename(columns={
-        'YM': '연월', 'mean': '평균 (분)', 'std': '표준편차',
-        'Limit_1Sigma': '1σ (주의)', 'Limit_2Sigma': '2σ (경고)', 'Limit_3Sigma': '3σ (심각)'
+        'YM': '연월', 'mean': '평균 (분)', 'std': '표준편차', 'Limit_1Sigma': '1σ (주의)'
     })
-    st.dataframe(disp_stats.style.format({
-        '평균 (분)': '{:.1f}', '표준편차': '{:.1f}',
-        '1σ (주의)': '{:.1f}', '2σ (경고)': '{:.1f}', '3σ (심각)': '{:.1f}'
-    }), hide_index=True, use_container_width=True)
+    st.dataframe(disp_stats[['연월', '평균 (분)', '표준편차', '1σ (주의)']].style.format('{:.1f}'), hide_index=True, use_container_width=True)
     
-    # Current Month Info & Limit Setting
     curr_ym = pd.Period(sel_date, freq='M')
     curr_stat = taxi_stats[taxi_stats['YM'] == curr_ym]
     
     if not curr_stat.empty:
-        limit_val = curr_stat.iloc[0]['Limit_1Sigma']
-        mean_val = curr_stat.iloc[0]['mean']
-        std_val = curr_stat.iloc[0]['std']
-        current_limit = limit_val # Update limit dynamically
-        st.info(f"💡 **{curr_ym}월 Taxi 기준:** 평균 {mean_val:.1f}분 + 1σ ({std_val:.1f}) = **{limit_val:.1f}분** 초과시 지연으로 간주")
+        current_limit = curr_stat.iloc[0]['Limit_1Sigma']
+        st.info(f"💡 **{curr_ym}월 지연 기준:** Total Delay > 15분 AND (Ramp Delay > 15분 OR Taxi Time > {current_limit:.1f}분)")
     else:
-        st.warning(f"⚠️ **{curr_ym}월 통계 없음:** 기본값 30분을 기준으로 사용합니다.")
+        st.warning(f"⚠️ **{curr_ym}월 통계 없음:** 기본값 사용")
 
 # ==========================================
 # 5. Scatter Plot (Analysis)
 # ==========================================
 st.divider()
-st.markdown("##### 📈 지연 원인 분석 (통계 기준 적용)")
+st.markdown("##### 📈 지연 원인 분석 (Total Delay > 15분 기준)")
 
 col_chart, col_dummy = st.columns([3, 1])
 with col_chart:
     if not day_flights.empty:
+        # Filter for chart: Show all, color by cause
         scatter = alt.Chart(day_flights).mark_circle(size=60).encode(
             x=alt.X('Ramp_Delay', title='주기장 지연 (분)'),
             y=alt.Y('Taxi_Time', title='지상 이동 시간 (분)'),
@@ -263,10 +265,9 @@ with col_chart:
                             scale=alt.Scale(domain=['Normal', 'Ramp (Gate)', 'Taxi (Ground)'],
                                             range=['green', 'red', 'orange']),
                             legend=alt.Legend(title="지연 원인")),
-            tooltip=['FLT', 'SPT', 'Delay_Cause', 'Ramp_Delay', 'Taxi_Time']
+            tooltip=['FLT', 'SPT', 'Delay_Cause', 'Total_Delay', 'Ramp_Delay', 'Taxi_Time']
         ).interactive()
         
-        # Add Threshold Lines (Dynamic Limit)
         rule_taxi = alt.Chart(pd.DataFrame({'y': [current_limit]})).mark_rule(color='orange', strokeDash=[3,3]).encode(y='y')
         rule_ramp = alt.Chart(pd.DataFrame({'x': [15]})).mark_rule(color='red', strokeDash=[3,3]).encode(x='x')
         
@@ -275,9 +276,11 @@ with col_chart:
         st.info("데이터 없음")
 
 with col_dummy:
-    st.info("💡 **가이드**")
-    st.write("- **X축 (Ramp):** 15분 이상이면 <span style='color:red'>Red (Gate)</span>", unsafe_allow_html=True)
-    st.write(f"- **Y축 (Taxi):** {current_limit:.1f}분(1σ) 초과시 <span style='color:orange'>Orange (Ground)</span>")
+    st.info("💡 **판정 로직**")
+    st.write("1. **Normal (Green):** 이륙 지연(ATD-STD) 15분 이하")
+    st.write("2. **Delayed:** 15분 초과 시 원인 분류")
+    st.write("   - <span style='color:red'>●</span> **Ramp (Gate):** 주기장 지연 ≥ 15분", unsafe_allow_html=True)
+    st.write(f"   - <span style='color:orange'>●</span> **Taxi (Ground):** Taxi Time > {current_limit:.1f}분 (1σ)", unsafe_allow_html=True)
 
 # ==========================================
 # 6. Map Visualization
@@ -300,15 +303,7 @@ for _, row in map_flights.iterrows():
     color = color_dict.get(row['Delay_Cause'], 'blue')
     time_str = row[target_col].strftime('%H:%M')
     
-    # Calculate Sigma Level for Tooltip
-    sigma_level = 0.0
-    if not curr_stat.empty:
-        mean_val = curr_stat.iloc[0]['mean']
-        std_val = curr_stat.iloc[0]['std']
-        if std_val > 0:
-            sigma_level = (row['Taxi_Time'] - mean_val) / std_val
-    
-    popup = f"<b>{row['FLT']}</b><br>Delay: {row['Delay_Cause']}<br>Ramp: {row['Ramp_Delay']:.0f}m<br>Taxi: {row['Taxi_Time']:.0f}m ({sigma_level:.1f}σ)"
+    popup = f"<b>{row['FLT']}</b><br>Delay: {row['Delay_Cause']}<br>Total: {row['Total_Delay']:.0f}m"
     folium.Marker(
         [row['Lat'], row['Lon']], popup=popup, tooltip=f"{row['FLT']}",
         icon=folium.Icon(color=color, icon='plane', prefix='fa')
