@@ -118,18 +118,19 @@ def load_data():
     
     df_flight = pd.merge(df_flight, stats, on='YM', how='left')
     
+    # 🌟 REFINED LOGIC
     def classify_delay_stat(row):
-        # 1. Normal Condition
-        if row['Total_Delay'] <= 15:
+        # 1. Total Delay Condition (Primary)
+        if row['Total_Delay'] < 15: # Less than 15 mins (User said "15분 이상" is Delay)
             return 'Normal'
-        # 2. Delayed -> Check Cause
-        if row['Ramp_Delay'] >= 15:
-            return 'Ramp (Gate)'
+            
+        # 2. If Delayed (>= 15), Determine Cause
         limit = row['Limit_1Sigma'] if pd.notna(row['Limit_1Sigma']) else 30
-        if row['Taxi_Time'] > limit:
+        
+        if row['Taxi_Time'] >= limit:
             return 'Taxi (Ground)'
-        # Fallback for delayed flights with ambiguous cause -> assume Taxi
-        return 'Taxi (Ground)'
+        else:
+            return 'Ramp (Gate)'
 
     df_flight['Delay_Cause'] = df_flight.apply(classify_delay_stat, axis=1)
     df_merged = pd.merge(df_flight, df_zone, left_on='SPT', right_on='Stand_ID', how='inner')
@@ -229,7 +230,6 @@ if taxi_stats is not None:
         'YM': '연월', 'mean': '평균 (분)', 'std': '표준편차', 'Limit_1Sigma': '1σ (주의)'
     })
     
-    # Use dictionary formatting to avoid formatting string columns
     st.dataframe(disp_stats[['연월', '평균 (분)', '표준편차', '1σ (주의)']].style.format({
         '평균 (분)': '{:.1f}', 
         '표준편차': '{:.1f}', 
@@ -241,7 +241,9 @@ if taxi_stats is not None:
     
     if not curr_stat.empty:
         current_limit = curr_stat.iloc[0]['Limit_1Sigma']
-        st.info(f"💡 **{curr_ym}월 지연 기준:** Total Delay > 15분 AND (Ramp Delay > 15분 OR Taxi Time > {current_limit:.1f}분)")
+        st.info(f"💡 **{curr_ym}월 지연 기준:** Total Delay ≥ 15분")
+        st.write(f"   - **Taxi (Ground):** Taxi Time ≥ {current_limit:.1f}분 (1σ)")
+        st.write(f"   - **Ramp (Gate):** Taxi Time < {current_limit:.1f}분")
     else:
         st.warning(f"⚠️ **{curr_ym}월 통계 없음:** 기본값 30분 기준 사용")
 
@@ -249,7 +251,7 @@ if taxi_stats is not None:
 # 5. Scatter Plot
 # ==========================================
 st.divider()
-st.markdown("##### 📈 지연 원인 분석 (Total Delay > 15분 기준)")
+st.markdown("##### 📈 지연 원인 분석 (Total Delay ≥ 15분 기준)")
 
 col_chart, col_dummy = st.columns([3, 1])
 with col_chart:
@@ -265,18 +267,17 @@ with col_chart:
         ).interactive()
         
         rule_taxi = alt.Chart(pd.DataFrame({'y': [current_limit]})).mark_rule(color='orange', strokeDash=[3,3]).encode(y='y')
-        rule_ramp = alt.Chart(pd.DataFrame({'x': [15]})).mark_rule(color='red', strokeDash=[3,3]).encode(x='x')
         
-        st.altair_chart(scatter + rule_taxi + rule_ramp, use_container_width=True)
+        st.altair_chart(scatter + rule_taxi, use_container_width=True)
     else:
         st.info("데이터 없음")
 
 with col_dummy:
     st.info("💡 **판정 로직**")
-    st.write("1. **Normal (Green):** 이륙 지연(ATD-STD) 15분 이하")
-    st.write("2. **Delayed:** 15분 초과 시 원인 분류")
-    st.write("   - <span style='color:red'>●</span> **Ramp (Gate):** 주기장 지연 ≥ 15분", unsafe_allow_html=True)
-    st.write(f"   - <span style='color:orange'>●</span> **Taxi (Ground):** Taxi Time > {current_limit:.1f}분 (1σ)", unsafe_allow_html=True)
+    st.write("1. **Normal (Green):** 이륙 지연(ATD-STD) 15분 미만")
+    st.write("2. **Delayed:** 15분 이상 시 원인 분류")
+    st.write(f"   - <span style='color:orange'>●</span> **Taxi (Ground):** Taxi Time ≥ {current_limit:.1f}분 (1σ)", unsafe_allow_html=True)
+    st.write("   - <span style='color:red'>●</span> **Ramp (Gate):** Taxi Time < 1σ", unsafe_allow_html=True)
 
 # ==========================================
 # 6. Map Visualization
