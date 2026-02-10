@@ -11,7 +11,7 @@ import numpy as np
 st.set_page_config(page_title="Incheon Airport Statistical Analysis Final", layout="wide")
 
 # ==========================================
-# 1. 데이터 로드 (Flight + Weather)
+# 1. Load Data (Flight + Weather)
 # ==========================================
 @st.cache_data
 def load_data():
@@ -52,7 +52,11 @@ def load_data():
     df_flight['Date'] = df_flight['Date'].astype(str)
     
     def parse_dt(date_str, time_str):
-        try: return pd.to_datetime(f"20{date_str} {time_str}", format='%Y%m%d %H:%M')
+        try: 
+            # Force string type to avoid formatting errors
+            d_str = str(date_str).strip()
+            t_str = str(time_str).strip()
+            return pd.to_datetime(f"20{d_str} {t_str}", format='%Y%m%d %H:%M')
         except: return pd.NaT
 
     df_flight['STD_Full'] = df_flight.apply(lambda x: parse_dt(x['Date'], x['STD']), axis=1)
@@ -66,7 +70,7 @@ def load_data():
         ram_dt = pd.NaT
         try:
             if pd.notna(row.get('RAM')):
-                ram_time = pd.to_datetime(row['RAM'], format='%H:%M').time()
+                ram_time = pd.to_datetime(str(row['RAM']), format='%H:%M').time()
                 ram_dt = std.replace(hour=ram_time.hour, minute=ram_time.minute)
                 if std.hour < 4 and ram_dt.hour > 20: ram_dt -= timedelta(days=1)
                 elif std.hour > 20 and ram_dt.hour < 4: ram_dt += timedelta(days=1)
@@ -76,7 +80,7 @@ def load_data():
         atd_dt = pd.NaT
         try:
             if 'ATD' in row and pd.notna(row['ATD']):
-                atd_time = pd.to_datetime(row['ATD'], format='%H:%M').time()
+                atd_time = pd.to_datetime(str(row['ATD']), format='%H:%M').time()
                 base_dt = ram_dt if not pd.isna(ram_dt) else std
                 atd_dt = base_dt.replace(hour=atd_time.hour, minute=atd_time.minute)
                 if atd_dt < base_dt: atd_dt += timedelta(days=1)
@@ -134,8 +138,6 @@ def load_data():
         if row['Taxi_Time'] > limit:
             return 'Taxi (Ground)'
             
-        # Fallback if both seem normal but total > 15 (e.g. Ramp 10, Taxi slightly high)
-        # Default to Taxi as it implies delay happened after Pushback
         return 'Taxi (Ground)'
 
     df_flight['Delay_Cause'] = df_flight.apply(classify_delay_stat, axis=1)
@@ -171,7 +173,7 @@ flights, weather, taxi_stats, msg = load_data()
 # ==========================================
 # 2. UI & Interaction
 # ==========================================
-st.title("🛫 인천공항 통계 기반 지연 분석 (Final)")
+st.title("🛫 인천공항 통계 기반 지연 분석 (Final Fixed)")
 
 if flights is None:
     st.error(msg)
@@ -246,7 +248,7 @@ if taxi_stats is not None:
         current_limit = curr_stat.iloc[0]['Limit_1Sigma']
         st.info(f"💡 **{curr_ym}월 지연 기준:** Total Delay > 15분 AND (Ramp Delay > 15분 OR Taxi Time > {current_limit:.1f}분)")
     else:
-        st.warning(f"⚠️ **{curr_ym}월 통계 없음:** 기본값 사용")
+        st.warning(f"⚠️ **{curr_ym}월 통계 없음:** 기본값 30분 기준 사용")
 
 # ==========================================
 # 5. Scatter Plot (Analysis)
@@ -257,7 +259,6 @@ st.markdown("##### 📈 지연 원인 분석 (Total Delay > 15분 기준)")
 col_chart, col_dummy = st.columns([3, 1])
 with col_chart:
     if not day_flights.empty:
-        # Filter for chart: Show all, color by cause
         scatter = alt.Chart(day_flights).mark_circle(size=60).encode(
             x=alt.X('Ramp_Delay', title='주기장 지연 (분)'),
             y=alt.Y('Taxi_Time', title='지상 이동 시간 (분)'),
