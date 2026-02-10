@@ -11,17 +11,17 @@ import numpy as np
 st.set_page_config(page_title="Incheon Airport Statistical Analysis Final", layout="wide")
 
 # ==========================================
-# 1. Load Data (Flight + Weather)
+# 1. Load Data
 # ==========================================
 @st.cache_data
 def load_data():
-    # 1. Zone Data
+    # 1. Zone
     file_zone = 'rksi_stands_zoned.csv'
     if not os.path.exists(file_zone): return None, None, None, "Zone file not found"
     df_zone = pd.read_csv(file_zone)
     df_zone['Stand_ID'] = df_zone['Stand_ID'].astype(str)
 
-    # 2. Flight Data (RAMP)
+    # 2. Flight (RAMP)
     ramp_files = glob.glob('*RAMP*.csv')
     if not ramp_files: return None, None, None, "No RAMP files found"
     
@@ -33,7 +33,7 @@ def load_data():
         except: pass
     df_flight = pd.concat(df_list, ignore_index=True)
     
-    # 3. Weather Data (AMOS)
+    # 3. Weather (AMOS)
     weather_files = glob.glob('AMOS_RKSI_*.csv')
     df_weather = pd.DataFrame()
     if weather_files:
@@ -47,13 +47,12 @@ def load_data():
         if w_list:
             df_weather = pd.concat(w_list, ignore_index=True)
 
-    # --- Preprocessing Flight Data ---
+    # --- Preprocessing ---
     df_flight['SPT'] = df_flight['SPT'].astype(str)
     df_flight['Date'] = df_flight['Date'].astype(str)
     
     def parse_dt(date_str, time_str):
         try: 
-            # Force string type to avoid formatting errors
             d_str = str(date_str).strip()
             t_str = str(time_str).strip()
             return pd.to_datetime(f"20{d_str} {t_str}", format='%Y%m%d %H:%M')
@@ -61,7 +60,6 @@ def load_data():
 
     df_flight['STD_Full'] = df_flight.apply(lambda x: parse_dt(x['Date'], x['STD']), axis=1)
     
-    # Calculate Times & Delays
     def calc_all_times(row):
         std = row['STD_Full']
         if pd.isna(std): return pd.NaT, pd.NaT, 0, 0, 0
@@ -86,20 +84,17 @@ def load_data():
                 if atd_dt < base_dt: atd_dt += timedelta(days=1)
         except: pass
 
-        # Metrics Calculation
+        # Metrics
         ramp_delay = 0
         taxi_time = 0
         total_delay = 0
         
-        # Total Delay: ATD - STD
         if not pd.isna(atd_dt):
             total_delay = (atd_dt - std).total_seconds() / 60
         
-        # Ramp Delay
         if not pd.isna(ram_dt):
             ramp_delay = (ram_dt - std).total_seconds() / 60
             
-        # Taxi Time
         if 'ATD-RAM' in row and pd.notna(row['ATD-RAM']):
              try: taxi_time = float(row['ATD-RAM'])
              except: taxi_time = 0
@@ -115,9 +110,8 @@ def load_data():
     df_flight['Taxi_Time'] = res[3]
     df_flight['Total_Delay'] = res[4]
     
-    # --- Statistical Thresholding ---
+    # --- Statistics ---
     df_flight['YM'] = df_flight['STD_Full'].dt.to_period('M')
-    
     valid_taxi = df_flight[df_flight['Taxi_Time'] > 0]
     stats = valid_taxi.groupby('YM')['Taxi_Time'].agg(['mean', 'std']).reset_index()
     stats['Limit_1Sigma'] = stats['mean'] + stats['std']
@@ -125,25 +119,22 @@ def load_data():
     df_flight = pd.merge(df_flight, stats, on='YM', how='left')
     
     def classify_delay_stat(row):
-        # 1. Total Delay Condition (Primary)
+        # 1. Normal Condition
         if row['Total_Delay'] <= 15:
             return 'Normal'
-            
-        # 2. If Delayed, Determine Cause (Secondary)
+        # 2. Delayed -> Check Cause
         if row['Ramp_Delay'] >= 15:
             return 'Ramp (Gate)'
-            
-        # Check Sigma Limit for Taxi
         limit = row['Limit_1Sigma'] if pd.notna(row['Limit_1Sigma']) else 30
         if row['Taxi_Time'] > limit:
             return 'Taxi (Ground)'
-            
+        # Fallback for delayed flights with ambiguous cause -> assume Taxi
         return 'Taxi (Ground)'
 
     df_flight['Delay_Cause'] = df_flight.apply(classify_delay_stat, axis=1)
     df_merged = pd.merge(df_flight, df_zone, left_on='SPT', right_on='Stand_ID', how='inner')
 
-    # --- Weather Data ---
+    # --- Weather ---
     if not df_weather.empty:
         df_weather['DT'] = pd.to_datetime(df_weather['일시'])
         df_weather = df_weather.rename(columns={
@@ -171,15 +162,14 @@ def load_data():
 flights, weather, taxi_stats, msg = load_data()
 
 # ==========================================
-# 2. UI & Interaction
+# 2. UI
 # ==========================================
-st.title("🛫 인천공항 통계 기반 지연 분석 (Final Fixed)")
+st.title("🛫 인천공항 통계 기반 지연 분석 (Final)")
 
 if flights is None:
     st.error(msg)
     st.stop()
 
-# Sidebar
 st.sidebar.header("설정 (Settings)")
 min_dt, max_dt = flights['STD_Full'].min(), flights['STD_Full'].max()
 sel_date = st.sidebar.date_input("날짜 선택", min_dt.date(), min_value=min_dt.date(), max_value=max_dt.date())
@@ -189,7 +179,6 @@ time_basis = st.sidebar.radio("기준 시간", ["STD (계획)", "RAM (푸시백)
 col_map = {"STD (계획)": "STD_Full", "RAM (푸시백)": "RAM_Full"}
 target_col = col_map[time_basis]
 
-# Filter Data
 valid_flights = flights.dropna(subset=[target_col]).copy()
 day_flights = valid_flights[valid_flights[target_col].dt.date == sel_date].copy()
 map_flights = day_flights[day_flights[target_col].dt.hour == sel_hour].copy()
@@ -208,7 +197,7 @@ def get_cardinal(deg):
     return dirs[idx]
 
 # ==========================================
-# 3. Dashboard Header
+# 3. Header
 # ==========================================
 st.subheader(f"⏱️ {time_basis} 기준 | {sel_date} {sel_hour}:00")
 
@@ -226,7 +215,7 @@ c5.metric("기상 현상", w_desc)
 c6.metric("강수량", f"{cur_weather['Precip']}mm" if cur_weather is not None else "-")
 
 # ==========================================
-# 4. Statistical Analysis Table
+# 4. Statistics Table
 # ==========================================
 st.divider()
 st.markdown("##### 📊 월별 Taxi Time 통계 기준표 (Sigma Analysis)")
@@ -239,7 +228,13 @@ if taxi_stats is not None:
     disp_stats = disp_stats.rename(columns={
         'YM': '연월', 'mean': '평균 (분)', 'std': '표준편차', 'Limit_1Sigma': '1σ (주의)'
     })
-    st.dataframe(disp_stats[['연월', '평균 (분)', '표준편차', '1σ (주의)']].style.format('{:.1f}'), hide_index=True, use_container_width=True)
+    
+    # Use dictionary formatting to avoid formatting string columns
+    st.dataframe(disp_stats[['연월', '평균 (분)', '표준편차', '1σ (주의)']].style.format({
+        '평균 (분)': '{:.1f}', 
+        '표준편차': '{:.1f}', 
+        '1σ (주의)': '{:.1f}'
+    }), hide_index=True, use_container_width=True)
     
     curr_ym = pd.Period(sel_date, freq='M')
     curr_stat = taxi_stats[taxi_stats['YM'] == curr_ym]
@@ -251,7 +246,7 @@ if taxi_stats is not None:
         st.warning(f"⚠️ **{curr_ym}월 통계 없음:** 기본값 30분 기준 사용")
 
 # ==========================================
-# 5. Scatter Plot (Analysis)
+# 5. Scatter Plot
 # ==========================================
 st.divider()
 st.markdown("##### 📈 지연 원인 분석 (Total Delay > 15분 기준)")
