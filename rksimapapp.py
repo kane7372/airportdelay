@@ -7,7 +7,7 @@ import altair as alt
 import os
 import glob
 
-st.set_page_config(page_title="Incheon Airport Flight & Weather Final", layout="wide")
+st.set_page_config(page_title="Incheon Airport Ultimate Flight & Weather Final", layout="wide")
 
 # ==========================================
 # 1. 데이터 로드 (Flight + Weather)
@@ -161,18 +161,36 @@ if weather is not None and not weather.empty:
     w_row = weather[weather['DT'] == target_dt]
     if not w_row.empty: cur_weather = w_row.iloc[0]
 
+# Helper for Wind Direction
+def get_cardinal(deg):
+    if pd.isna(deg): return ""
+    dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+    idx = int((deg + 22.5) / 45.0) % 8
+    return dirs[idx]
+
 # ==========================================
-# 3. Dashboard Header
+# 3. Dashboard Header (Updated)
 # ==========================================
 st.subheader(f"⏱️ {time_basis} 기준 | {sel_date} {sel_hour}:00")
 
-c1, c2, c3, c4, c5 = st.columns(5)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 c1.metric("대상 편수", f"{len(map_flights)}")
 c2.metric("기온", f"{cur_weather['Temp']}°C" if cur_weather is not None else "-")
 c3.metric("시정", f"{cur_weather['Visibility']:.0f}m" if cur_weather is not None else "-")
-c4.metric("풍속", f"{cur_weather['Wind_Spd']}kt" if cur_weather is not None else "-")
+
+# Wind Info
+if cur_weather is not None and pd.notna(cur_weather['Wind_Dir']):
+    wd = cur_weather['Wind_Dir']
+    ws = cur_weather['Wind_Spd']
+    cardinal = get_cardinal(wd)
+    wind_str = f"{ws}kt ({wd:.0f}° {cardinal})"
+    c4.metric("풍속/풍향", wind_str)
+else:
+    c4.metric("풍속/풍향", "-")
+
 w_desc = cur_weather['Weather_Desc'] if cur_weather is not None else "-"
 c5.metric("기상 현상", w_desc)
+c6.metric("강수량", f"{cur_weather['Precip']}mm" if cur_weather is not None else "-")
 
 # ==========================================
 # 4. Scatter Plot (Analysis)
@@ -204,14 +222,23 @@ with col_dummy:
     st.write("- <span style='color:orange'>●</span> 이동 지연 (Taxi Issue)", unsafe_allow_html=True)
 
 # ==========================================
-# 5. Map Visualization (Simplified)
+# 5. Map Visualization
 # ==========================================
 st.divider()
 st.markdown(f"##### 🗺️ {time_basis} 기준 주기장 현황")
 
 m = folium.Map(location=[37.46, 126.44], zoom_start=13)
-runways = {'33L': (37.4541, 126.4608), '15R': (37.4816, 126.4363), '33R': (37.4563, 126.4647), '15L': (37.4838, 126.4402)}
-for r, c in runways.items(): folium.Marker(c, popup=r, icon=folium.Icon(color='gray', icon='plane')).add_to(m)
+
+# 🚀 활주로 좌표 (16/34 포함)
+runways = {
+    '33L': (37.4541, 126.4608), '15R': (37.4816, 126.4363),
+    '33R': (37.4563, 126.4647), '15L': (37.4838, 126.4402),
+    '34L': (37.4411, 126.4377), '16R': (37.4680, 126.4130),
+    '34R': (37.4433, 126.4416), '16L': (37.4700, 126.4170)
+}
+
+for r, c in runways.items(): 
+    folium.Marker(c, popup=r, icon=folium.Icon(color='gray', icon='plane')).add_to(m)
 
 color_dict = {'Normal': 'green', 'Ramp (Gate)': 'red', 'Taxi (Ground)': 'orange'}
 
@@ -225,7 +252,7 @@ for _, row in map_flights.iterrows():
         icon=folium.Icon(color=color, icon='plane', prefix='fa')
     ).add_to(m)
 
-st_folium(m, width="100%", height=700) # 지도 높이를 키움
+st_folium(m, width="100%", height=700)
 
 # ==========================================
 # 6. Weather Trend
