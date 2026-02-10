@@ -8,7 +8,7 @@ import os
 import glob
 import numpy as np
 
-st.set_page_config(page_title="Incheon Airport Statistical Analysis Final", layout="wide")
+st.set_page_config(page_title="Incheon Airport Ultimate Flight & Weather Final", layout="wide")
 
 # ==========================================
 # 1. Load Data
@@ -16,8 +16,14 @@ st.set_page_config(page_title="Incheon Airport Statistical Analysis Final", layo
 @st.cache_data
 def load_data():
     # 1. Zone
-    file_zone = 'rksi_stands_zoned.csv'
-    if not os.path.exists(file_zone): return None, None, None, "Zone file not found"
+    file_zone = 'rksi_stands_zoned (2).csv' # Use the latest verified file
+    if not os.path.exists(file_zone):
+        # Fallback to previous name if (2) doesn't exist in local env logic
+        if os.path.exists('rksi_stands_zoned.csv'):
+            file_zone = 'rksi_stands_zoned.csv'
+        else:
+            return None, None, None, "Zone file not found"
+            
     df_zone = pd.read_csv(file_zone)
     df_zone['Stand_ID'] = df_zone['Stand_ID'].astype(str)
 
@@ -118,21 +124,23 @@ def load_data():
     
     df_flight = pd.merge(df_flight, stats, on='YM', how='left')
     
-    # 🌟 REFINED LOGIC
     def classify_delay_stat(row):
-        # 1. Total Delay Condition (Primary)
-        if row['Total_Delay'] < 15: # Less than 15 mins (User said "15분 이상" is Delay)
+        # 1. Normal Condition (Total Delay <= 15)
+        if row['Total_Delay'] <= 15:
             return 'Normal'
-            
-        # 2. If Delayed (>= 15), Determine Cause
+        
+        # 2. Delayed -> Check Cause
+        # Taxi Delay if > 1 Sigma Limit
         limit = row['Limit_1Sigma'] if pd.notna(row['Limit_1Sigma']) else 30
         
         if row['Taxi_Time'] >= limit:
             return 'Taxi (Ground)'
         else:
-            return 'Ramp (Gate)'
+            return 'Ramp (Gate)' # Default cause if delayed but not Taxi issue
 
     df_flight['Delay_Cause'] = df_flight.apply(classify_delay_stat, axis=1)
+    
+    # Merge with Zone Data (Inner Join)
     df_merged = pd.merge(df_flight, df_zone, left_on='SPT', right_on='Stand_ID', how='inner')
 
     # --- Weather ---
@@ -158,9 +166,9 @@ def load_data():
             else: return "기타"
         df_weather['Weather_Desc'] = df_weather['W_Code'].apply(parse_weather_code)
         
-    return df_merged, df_weather, stats, "Success"
+    return df_merged, df_weather, stats, df_zone, "Success" # Return df_zone too
 
-flights, weather, taxi_stats, msg = load_data()
+flights, weather, taxi_stats, zone_data, msg = load_data()
 
 # ==========================================
 # 2. UI
@@ -231,9 +239,7 @@ if taxi_stats is not None:
     })
     
     st.dataframe(disp_stats[['연월', '평균 (분)', '표준편차', '1σ (주의)']].style.format({
-        '평균 (분)': '{:.1f}', 
-        '표준편차': '{:.1f}', 
-        '1σ (주의)': '{:.1f}'
+        '평균 (분)': '{:.1f}', '표준편차': '{:.1f}', '1σ (주의)': '{:.1f}'
     }), hide_index=True, use_container_width=True)
     
     curr_ym = pd.Period(sel_date, freq='M')
@@ -294,6 +300,17 @@ runways = {
 }
 for r, c in runways.items(): folium.Marker(c, popup=r, icon=folium.Icon(color='gray', icon='plane')).add_to(m)
 
+# Draw De-icing Aprons (Static Markers for Reference)
+# Filter De-icing spots from zone_data
+deicing_spots = zone_data[zone_data['Category'] == 'De-icing Apron']
+for _, row in deicing_spots.iterrows():
+    folium.CircleMarker(
+        [row['Lat'], row['Lon']], radius=3, color='cyan', fill=True, fill_opacity=0.6,
+        popup=f"De-icing Spot: {row['Stand_ID']}",
+        tooltip=f"De-icing {row['Stand_ID']}"
+    ).add_to(m)
+
+# Flight Markers
 color_dict = {'Normal': 'green', 'Ramp (Gate)': 'red', 'Taxi (Ground)': 'orange'}
 
 for _, row in map_flights.iterrows():
