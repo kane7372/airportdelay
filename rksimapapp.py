@@ -17,7 +17,7 @@ st.set_page_config(page_title="Incheon Airport Ultimate Flight & Weather", layou
 # ==========================================
 @st.cache_data
 def load_data():
-    file_zone = 'rksi_stands_zoned (2).csv'
+    file_zone = 'rksi_stands_zoned.csv'
     if not os.path.exists(file_zone):
         if os.path.exists('rksi_stands_zoned.csv'): file_zone = 'rksi_stands_zoned.csv'
         else: return None, None, None, None, "Zone file not found"
@@ -25,24 +25,32 @@ def load_data():
     df_zone = pd.read_csv(file_zone)
     df_zone['Stand_ID'] = df_zone['Stand_ID'].astype(str)
 
-    # Load Flights
+    # -----------------------------------------------------
+    # [수정됨] 항공편 데이터 로드 및 출/도착(STS) 라벨링 강화
+    # -----------------------------------------------------
     flight_files = glob.glob('*RAMP*.csv') + glob.glob('*출발*.csv') + glob.glob('*도착*.csv')
     df_list = []
     for f in set(flight_files):
         try: 
             temp_df = pd.read_csv(f)
-            # 파일 이름에 '도착'이나 'ARR'이 있으면 확실하게 ARR로 지정
+            # 파일명 기반으로 확실하게 출/도착 구분
             if '도착' in f or 'ARR' in f.upper():
                 temp_df['STS'] = 'ARR'
-            # 파일 이름에 '출발'이나 'DEP'가 있으면 확실하게 DEP로 지정
             elif '출발' in f or 'DEP' in f.upper():
                 temp_df['STS'] = 'DEP'
             df_list.append(temp_df)
         except: pass
+        
     if not df_list: return None, None, None, None, "No Flight files found"
     df_flight = pd.concat(df_list, ignore_index=True)
     
-    # Load Weather
+    if 'STS' not in df_flight.columns: 
+        df_flight['STS'] = 'DEP'
+    df_flight['STS'] = df_flight['STS'].fillna('DEP')
+
+    # -----------------------------------------------------
+    # 기상 데이터 로드
+    # -----------------------------------------------------
     weather_files = glob.glob('AMOS_RKSI_*.csv') + glob.glob('기상_*.csv')
     df_weather = pd.DataFrame()
     w_list = []
@@ -53,24 +61,29 @@ def load_data():
         except: pass
     if w_list: df_weather = pd.concat(w_list, ignore_index=True)
 
-    # --- Preprocessing ---
+    # -----------------------------------------------------
+    # [수정됨] 데이터 전처리 (불량 날짜 차단)
+    # -----------------------------------------------------
     if 'SPT' in df_flight.columns: df_flight['SPT'] = df_flight['SPT'].astype(str)
-    if 'STS' not in df_flight.columns: df_flight['STS'] = 'DEP' # Default if missing
     df_flight['Date_str'] = df_flight['Date'].astype(str)
     
     def parse_dt(date_str, time_str):
         try: 
             d_str, t_str = str(date_str).strip(), str(time_str).strip()
+            if d_str.lower() == 'nan': return pd.NaT
             return pd.to_datetime(f"{d_str if len(d_str)==8 else '20'+d_str} {t_str}", format='%Y%m%d %H:%M')
         except: return pd.NaT
 
     df_flight['Plan_Time'] = df_flight['STD'] if 'STD' in df_flight.columns else df_flight.get('STA', pd.NaT)
+    df_flight.loc[df_flight['STS'] == 'ARR', 'Plan_Time'] = df_flight.get('STA', df_flight['Plan_Time'])
+    
     df_flight['STD_Full'] = df_flight.apply(lambda x: parse_dt(x['Date_str'], x['Plan_Time']), axis=1)
+    
+    # 🚨 핵심 방어 로직: 시간 파싱에 실패한 불량 데이터(NaN/Float)를 아예 삭제!
+    df_flight = df_flight.dropna(subset=['STD_Full'])
     
     def calc_all_times(row):
         std = row['STD_Full']
-        if pd.isna(std): return pd.NaT, pd.NaT, 0, 0, 0
-        
         ram_dt = pd.NaT
         try:
             if pd.notna(row.get('RAM')):
@@ -81,9 +94,12 @@ def load_data():
         except: pass
 
         act_dt = pd.NaT
-        act_col = 'ATD' if 'ATD' in row and pd.notna(row['ATD']) else ('ATA' if 'ATA' in row and pd.notna(row['ATA']) else None)
+        act_col = 'ATD' if row['STS'] == 'DEP' else 'ATA'
+        if act_col not in row:
+            act_col = 'ATD' if 'ATD' in row else ('ATA' if 'ATA' in row else None)
+            
         try:
-            if act_col:
+            if act_col and pd.notna(row.get(act_col)):
                 act_time = pd.to_datetime(str(row[act_col]), format='%H:%M').time()
                 base_dt = ram_dt if not pd.isna(ram_dt) else std
                 act_dt = base_dt.replace(hour=act_time.hour, minute=act_time.minute)
@@ -129,7 +145,8 @@ def load_data():
 
     # --- Weather ---
     if not df_weather.empty:
-        df_weather['DT'] = pd.to_datetime(df_weather['일시'])
+        df_weather['DT'] = pd.to_datetime(df_weather['일시'], errors='coerce')
+        df_weather = df_weather.dropna(subset=['DT'])
         df_weather = df_weather.rename(columns={'기온(°C)': 'Temp', '풍속(KT)': 'Wind_Spd', '풍향(deg)': 'Wind_Dir', '시정(m)': 'Visibility', '강수량(mm)': 'Precip', '일기현상': 'W_Code'})
         df_weather['Precip'] = df_weather['Precip'].fillna(0)
         df_weather['Visibility'] = df_weather['Visibility'].fillna(10000)
@@ -147,12 +164,14 @@ def load_data():
             
         df_weather['Weather_Desc'] = df_weather['W_Code'].apply(parse_wmo_code)
         daily_weather = df_weather.groupby(df_weather['DT'].dt.date)['Weather_Desc'].apply(
-            lambda x: '강설/결빙 (De-icing)' if any(k in w for w in x for k in ['눈', '설', '빙', '결빙', '진눈깨비']) else '일반'
+            lambda x: '강설_결빙(De-icing)' if any(k in w for w in x for k in ['눈', '설', '빙', '결빙', '진눈깨비']) else '일반'
         ).reset_index()
         daily_weather.columns = ['Date_Only', 'Snow_Status']
         
         df_merged = pd.merge(df_merged, daily_weather, on='Date_Only', how='left')
         df_merged['Snow_Status'] = df_merged['Snow_Status'].fillna('일반')
+    else:
+        df_merged['Snow_Status'] = '일반'
         
     return df_merged, df_weather, stats, df_zone, "Success"
 
@@ -179,16 +198,12 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # ------------------------------------------
 with tab1:
     st.header("📅 월별 운항 및 지연 트렌드")
-    
-    # 통계 집계 (월별, 출/도착별)
     monthly_stats = flights.groupby(['YM', 'STS']).agg(
         Flight_Count=('FLT', 'count'),
         Delay_Count=('Is_Delayed', 'sum'),
         Avg_Delay_Time=('Total_Delay', lambda x: x[x > 15].mean() if len(x[x > 15]) > 0 else 0),
         Avg_Taxi_Time=('Taxi_Time', 'mean')
     ).reset_index()
-    
-    monthly_stats['Delay_Rate (%)'] = (monthly_stats['Delay_Count'] / monthly_stats['Flight_Count']) * 100
     
     col1, col2 = st.columns(2)
     with col1:
@@ -211,18 +226,15 @@ with tab1:
 # ------------------------------------------
 with tab2:
     st.header("📆 일별 운항 및 지연 트렌드")
-    
     daily_stats = flights.groupby(['Date_Only', 'STS', 'Snow_Status']).agg(
         Flight_Count=('FLT', 'count'),
         Delay_Count=('Is_Delayed', 'sum'),
         Avg_Taxi_Time=('Taxi_Time', 'mean')
     ).reset_index()
     
-    # 기상 현상(강설/일반)에 따른 지상 이동시간 비교
     st.subheader("❄️ 강설 여부에 따른 일별 평균 지상이동시간")
-    fig_daily_taxi = px.line(daily_stats, x='Date_Only', y='Avg_Taxi_Time', color='STS', facet_row='Snow_Status',
-                             markers=True, height=600)
-    fig_daily_taxi.update_yaxes(matches=None) # 각 행의 Y축을 독립적으로 설정하여 차이 부각
+    fig_daily_taxi = px.line(daily_stats, x='Date_Only', y='Avg_Taxi_Time', color='STS', facet_row='Snow_Status', markers=True, height=600)
+    fig_daily_taxi.update_yaxes(matches=None)
     st.plotly_chart(fig_daily_taxi, use_container_width=True)
     
     st.subheader("📊 일별 지연 건수 추이")
@@ -236,15 +248,13 @@ with tab3:
     st.header("⏰ 시간대별(0~23시) 병목 현상 분석")
     st.markdown("특정 날짜 범위를 선택하여 **하루 중 어느 시간대**에 지연과 주기장 체증이 발생하는지 확인합니다.")
     
-    # 기간 필터
     min_date, max_date = flights['Date_Only'].min(), flights['Date_Only'].max()
     sel_date_range = st.date_input("분석 기간 선택", [min_date, max_date], min_value=min_date, max_value=max_date)
     
     if len(sel_date_range) == 2:
         start_d, end_d = sel_date_range
-        # Date_Only가 비어있는(NaN/NaT) 에러 유발 데이터 제거 후 필터링
-        valid_dates_df = flights.dropna(subset=['Date_Only'])
-        filtered_hourly = valid_dates_df[(valid_dates_df['Date_Only'] >= start_d) & (valid_dates_df['Date_Only'] <= end_d)]
+        # [수정됨] Date_Only가 제대로 필터링되도록 안전성 강화
+        filtered_hourly = flights[(flights['Date_Only'] >= start_d) & (flights['Date_Only'] <= end_d)]
         
         hourly_stats = filtered_hourly.groupby(['Hour', 'STS']).agg(
             Flight_Count=('FLT', 'count'),
@@ -254,19 +264,17 @@ with tab3:
         
         c1, c2 = st.columns(2)
         with c1:
-            fig_h1 = px.bar(hourly_stats, x='Hour', y='Flight_Count', color='STS', barmode='group', 
-                            title="시간대별 출/도착 스케줄 집중도 (Flight Count)")
+            fig_h1 = px.bar(hourly_stats, x='Hour', y='Flight_Count', color='STS', barmode='group', title="시간대별 출/도착 스케줄 집중도")
             fig_h1.update_xaxes(tickmode='linear', tick0=0, dtick=1)
             st.plotly_chart(fig_h1, use_container_width=True)
             
         with c2:
-            fig_h2 = px.line(hourly_stats, x='Hour', y='Avg_Taxi_Time', color='STS', markers=True, 
-                             title="시간대별 평균 지상 이동시간 (Taxi Time bottleneck)")
+            fig_h2 = px.line(hourly_stats, x='Hour', y='Avg_Taxi_Time', color='STS', markers=True, title="시간대별 평균 지상 이동시간")
             fig_h2.update_xaxes(tickmode='linear', tick0=0, dtick=1)
             st.plotly_chart(fig_h2, use_container_width=True)
 
 # ------------------------------------------
-# [TAB 4] 상세 지도 분석 (기존 기능)
+# [TAB 4] 상세 지도 분석
 # ------------------------------------------
 with tab4:
     st.header("🗺️ 상세 지연 인과 및 지도 시각화")
@@ -279,17 +287,14 @@ with tab4:
     valid_flights = flights.dropna(subset=[target_col]).copy()
     map_flights = valid_flights[(valid_flights[target_col].dt.date == sel_date) & (valid_flights[target_col].dt.hour == sel_hour)].copy()
 
-    # (이하 기존 지도 출력 로직과 동일하게 작성)
     c1, c2, c3 = st.columns(3)
     c1.metric("해당 시간 편수", f"{len(map_flights)}편")
     
     if 'Lat' in map_flights.columns:
         m = folium.Map(location=[37.46, 126.44], zoom_start=13)
-        # 활주로
         runways = {'33L': (37.4541, 126.4608), '15R': (37.4816, 126.4363), '34R': (37.4433, 126.4416), '16L': (37.4700, 126.4170)}
         for r, c in runways.items(): folium.Marker(c, popup=r, icon=folium.Icon(color='gray', icon='plane')).add_to(m)
 
-        # 항공기 마커
         color_dict = {'Normal': 'green', 'Ramp (Gate)': 'red', 'Taxi (Ground)': 'orange'}
         for _, row in map_flights.iterrows():
             color = color_dict.get(row['Delay_Cause'], 'blue')
