@@ -29,7 +29,15 @@ def load_data():
     flight_files = glob.glob('*RAMP*.csv') + glob.glob('*출발*.csv') + glob.glob('*도착*.csv')
     df_list = []
     for f in set(flight_files):
-        try: df_list.append(pd.read_csv(f))
+        try: 
+            temp_df = pd.read_csv(f)
+            # 파일 이름에 '도착'이나 'ARR'이 있으면 확실하게 ARR로 지정
+            if '도착' in f or 'ARR' in f.upper():
+                temp_df['STS'] = 'ARR'
+            # 파일 이름에 '출발'이나 'DEP'가 있으면 확실하게 DEP로 지정
+            elif '출발' in f or 'DEP' in f.upper():
+                temp_df['STS'] = 'DEP'
+            df_list.append(temp_df)
         except: pass
     if not df_list: return None, None, None, None, "No Flight files found"
     df_flight = pd.concat(df_list, ignore_index=True)
@@ -234,7 +242,9 @@ with tab3:
     
     if len(sel_date_range) == 2:
         start_d, end_d = sel_date_range
-        filtered_hourly = flights[(flights['Date_Only'] >= start_d) & (flights['Date_Only'] <= end_d)]
+        # Date_Only가 비어있는(NaN/NaT) 에러 유발 데이터 제거 후 필터링
+        valid_dates_df = flights.dropna(subset=['Date_Only'])
+        filtered_hourly = valid_dates_df[(valid_dates_df['Date_Only'] >= start_d) & (valid_dates_df['Date_Only'] <= end_d)]
         
         hourly_stats = filtered_hourly.groupby(['Hour', 'STS']).agg(
             Flight_Count=('FLT', 'count'),
