@@ -82,40 +82,63 @@ def load_data():
     # 🚨 핵심 방어 로직: 시간 파싱에 실패한 불량 데이터(NaN/Float)를 아예 삭제!
     df_flight = df_flight.dropna(subset=['STD_Full'])
     
+    # 🚨 이 함수(calc_all_times)를 통째로 교체해 주세요!
     def calc_all_times(row):
         std = row['STD_Full']
-        ram_dt = pd.NaT
-        try:
-            if pd.notna(row.get('RAM')):
-                ram_time = pd.to_datetime(str(row['RAM']), format='%H:%M').time()
-                ram_dt = std.replace(hour=ram_time.hour, minute=ram_time.minute)
-                if std.hour < 4 and ram_dt.hour > 20: ram_dt -= timedelta(days=1)
-                elif std.hour > 20 and ram_dt.hour < 4: ram_dt += timedelta(days=1)
-        except: pass
+        if pd.isna(std): return pd.NaT, pd.NaT, 0, 0, 0
+        
+        # [핵심 보정 로직] 자정을 넘나드는 조기/지연 시간을 완벽하게 추적하는 함수
+        def adjust_time_crossing(base_dt, target_time_str):
+            if pd.isna(target_time_str): return pd.NaT
+            try:
+                t = pd.to_datetime(str(target_time_str), format='%H:%M').time()
+                target_dt = base_dt.replace(hour=t.hour, minute=t.minute)
+                
+                # 시간 차이 계산 (초 단위)
+                diff = (target_dt - base_dt).total_seconds()
+                
+                # 12시간(43200초) 이상 차이가 나면 자정을 넘긴 것으로 간주하여 날짜 보정
+                if diff < -43200: 
+                    # 예: 계획 23:50, 실제 00:10 (차이가 -23시간 40분 -> 실제론 다음날 +20분 지연)
+                    target_dt += timedelta(days=1)
+                elif diff > 43200: 
+                    # 예: 계획 00:10, 실제 23:50 (차이가 +23시간 40분 -> 실제론 전날 -20분 조기 출발)
+                    target_dt -= timedelta(days=1)
+                    
+                return target_dt
+            except:
+                return pd.NaT
 
-        act_dt = pd.NaT
+        # 1. RAM 시간 계산 (STD 기준)
+        ram_dt = adjust_time_crossing(std, row.get('RAM'))
+
+        # 2. ACT (ATD/ATA) 시간 계산
         act_col = 'ATD' if row['STS'] == 'DEP' else 'ATA'
         if act_col not in row:
             act_col = 'ATD' if 'ATD' in row else ('ATA' if 'ATA' in row else None)
-            
-        try:
-            if act_col and pd.notna(row.get(act_col)):
-                act_time = pd.to_datetime(str(row[act_col]), format='%H:%M').time()
-                base_dt = ram_dt if not pd.isna(ram_dt) else std
-                act_dt = base_dt.replace(hour=act_time.hour, minute=act_time.minute)
-                if act_dt < base_dt: act_dt += timedelta(days=1)
-        except: pass
+        
+        # 이륙/착륙은 푸시백(RAM) 시간을 기준으로 보정 (RAM이 없으면 STD 기준)
+        act_dt = adjust_time_crossing(ram_dt if not pd.isna(ram_dt) else std, row.get(act_col))
 
-        ramp_delay, taxi_time, total_delay = 0, 0, 0
-        if not pd.isna(act_dt): total_delay = abs((act_dt - std).total_seconds() / 60)
-        if not pd.isna(ram_dt): ramp_delay = abs((ram_dt - std).total_seconds() / 60)
+        # 3. 지연 시간 계산 (절댓값 abs() 제거!)
+        ramp_delay, taxi_time, total_delay = 0.0, 0.0, 0.0
+        
+        if not pd.isna(act_dt): 
+            # 일찍 출발/도착하면 마이너스(-) 값이 그대로 저장됨
+            total_delay = (act_dt - std).total_seconds() / 60.0
             
-        if 'ATD-RAM' in row and pd.notna(row['ATD-RAM']): taxi_time = float(row['ATD-RAM'])
-        elif 'RAM-ATA' in row and pd.notna(row['RAM-ATA']): taxi_time = float(row['RAM-ATA'])
-        elif not pd.isna(act_dt) and not pd.isna(ram_dt): taxi_time = abs((act_dt - ram_dt).total_seconds() / 60)
+        if not pd.isna(ram_dt): 
+            ramp_delay = (ram_dt - std).total_seconds() / 60.0
+            
+        # Taxi-Time(지상이동시간)은 물리적인 이동 시간이므로 무조건 양수(abs)
+        if 'ATD-RAM' in row and pd.notna(row['ATD-RAM']): 
+            taxi_time = float(row['ATD-RAM'])
+        elif 'RAM-ATA' in row and pd.notna(row['RAM-ATA']): 
+            taxi_time = float(row['RAM-ATA'])
+        elif not pd.isna(act_dt) and not pd.isna(ram_dt): 
+            taxi_time = abs((act_dt - ram_dt).total_seconds() / 60.0)
              
         return ram_dt, act_dt, ramp_delay, taxi_time, total_delay
-
     res = df_flight.apply(calc_all_times, axis=1, result_type='expand')
     df_flight['RAM_Full'] = res[0]
     df_flight['ATD_Full'] = res[1]
