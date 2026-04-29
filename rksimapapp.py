@@ -6,6 +6,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import os
+import numpy as np
 
 st.set_page_config(page_title="Incheon Airport Ultimate Dashboard", layout="wide")
 
@@ -17,9 +18,14 @@ def load_data():
     if not os.path.exists('master_dashboard_data.csv'):
         return None, "🚨 'master_dashboard_data.csv' 파일이 없습니다. 먼저 데이터 전처리 스크립트를 실행해주세요!"
     
-    # 날짜 컬럼을 읽을 때 즉시 파싱하여 메모리 및 속도 최적화
     df = pd.read_csv('master_dashboard_data.csv', parse_dates=['STD_Full', 'RAM_Full'])
     df['Date_Only'] = pd.to_datetime(df['Date_Only']).dt.date
+    
+    # [신규 추가] 지연시간 대비 지상이동시간(Taxi) 비율 계산을 위한 사전 작업
+    # 지연된 항공편(Is_Delayed)이면서 지연시간이 0보다 큰 경우의 데이터만 추출
+    df['Delayed_Total_Time'] = np.where(df['Is_Delayed'] & (df['Total_Delay'] > 0), df['Total_Delay'], 0)
+    df['Delayed_Taxi_Time'] = np.where(df['Is_Delayed'] & (df['Total_Delay'] > 0), df['Taxi_Time'], 0)
+    
     return df, "Success"
 
 flights, msg = load_data()
@@ -46,10 +52,18 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.header("📅 월별 운항 및 지연 트렌드")
     monthly_stats = flights.groupby(['YM', 'STS_Detail']).agg(
-        Flight_Count=('FLT', 'count'), Delay_Count=('Is_Delayed', 'sum'),
+        Flight_Count=('FLT', 'count'), 
+        Delay_Count=('Is_Delayed', 'sum'),
         Avg_Delay_Time=('Total_Delay', lambda x: x[x > 15].mean() if len(x[x > 15]) > 0 else 0),
-        Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Taxi_In=('Taxi_In', 'mean')
+        Avg_Taxi_Out=('Taxi_Out', 'mean'), 
+        Avg_Taxi_In=('Taxi_In', 'mean'),
+        Sum_Delay=('Delayed_Total_Time', 'sum'),
+        Sum_Taxi_Delay=('Delayed_Taxi_Time', 'sum')
     ).reset_index()
+    
+    # 비율(%) 계산: (지상이동시간 합 / 총 지연시간 합) * 100
+    monthly_stats['Taxi_Ratio'] = np.where(monthly_stats['Sum_Delay'] > 0, 
+                                          (monthly_stats['Sum_Taxi_Delay'] / monthly_stats['Sum_Delay']) * 100, 0)
     
     c1, c2 = st.columns(2)
     with c1: st.plotly_chart(px.bar(monthly_stats, x='YM', y='Flight_Count', color='STS_Detail', barmode='stack', title="월별 출/도착 운항 편수"), use_container_width=True)
@@ -61,22 +75,38 @@ with tab1:
         melt_t = monthly_stats.melt(id_vars=['YM', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
         st.plotly_chart(px.line(melt_t, x='YM', y='Time', color='STS_Detail', line_dash='Taxi_Type', markers=True, title="월평균 지상이동시간"), use_container_width=True)
 
+    st.divider()
+    st.subheader("💡 지연 요인 분석: 전체 지연시간 중 지상이동(Taxi)이 차지하는 비중")
+    st.plotly_chart(px.line(monthly_stats, x='YM', y='Taxi_Ratio', color='STS_Detail', markers=True, 
+                            title="월별 지연시간 대비 지상이동시간 비중 (%)", 
+                            labels={'Taxi_Ratio': '지상이동시간 비중(%)'}), use_container_width=True)
+
 # ------------------------------------------
 # [TAB 2] 일별 통계 (Daily)
 # ------------------------------------------
 with tab2:
     st.header("📆 일별 운항 및 지연 트렌드")
     daily_stats = flights.groupby(['Date_Only', 'STS_Detail', 'Snow_Status']).agg(
-        Flight_Count=('FLT', 'count'), Delay_Count=('Is_Delayed', 'sum'),
-        Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Taxi_In=('Taxi_In', 'mean')
+        Flight_Count=('FLT', 'count'), 
+        Delay_Count=('Is_Delayed', 'sum'),
+        Avg_Taxi_Out=('Taxi_Out', 'mean'), 
+        Avg_Taxi_In=('Taxi_In', 'mean'),
+        Sum_Delay=('Delayed_Total_Time', 'sum'),
+        Sum_Taxi_Delay=('Delayed_Taxi_Time', 'sum')
     ).reset_index()
+    
+    daily_stats['Taxi_Ratio'] = np.where(daily_stats['Sum_Delay'] > 0, 
+                                        (daily_stats['Sum_Taxi_Delay'] / daily_stats['Sum_Delay']) * 100, 0)
     
     st.subheader("❄️ 강설 여부에 따른 일별 평균 지상이동시간")
     melt_d = daily_stats.melt(id_vars=['Date_Only', 'STS_Detail', 'Snow_Status'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
     fig_d = px.line(melt_d, x='Date_Only', y='Time', color='STS_Detail', line_dash='Taxi_Type', facet_row='Snow_Status', markers=True, height=600)
     fig_d.update_yaxes(matches=None)
     st.plotly_chart(fig_d, use_container_width=True)
-    st.plotly_chart(px.bar(daily_stats, x='Date_Only', y='Delay_Count', color='STS_Detail', title="일별 지연 및 결항 건수"), use_container_width=True)
+    
+    c1, c2 = st.columns(2)
+    with c1: st.plotly_chart(px.bar(daily_stats, x='Date_Only', y='Delay_Count', color='STS_Detail', title="일별 지연 및 결항 건수", barmode='stack'), use_container_width=True)
+    with c2: st.plotly_chart(px.line(daily_stats, x='Date_Only', y='Taxi_Ratio', color='STS_Detail', markers=True, title="일별 지연시간 중 지상이동시간 비중(%)"), use_container_width=True)
 
 # ------------------------------------------
 # [TAB 3] 시간대별 통계 (Hourly)
@@ -91,8 +121,15 @@ with tab3:
         f_hour = flights[(flights['Date_Only'] >= start_d) & (flights['Date_Only'] <= end_d)]
         
         h_stats = f_hour.groupby(['Hour', 'STS_Detail']).agg(
-            Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Taxi_In=('Taxi_In', 'mean')
+            Flight_Count=('FLT', 'count'), 
+            Avg_Taxi_Out=('Taxi_Out', 'mean'), 
+            Avg_Taxi_In=('Taxi_In', 'mean'),
+            Sum_Delay=('Delayed_Total_Time', 'sum'),
+            Sum_Taxi_Delay=('Delayed_Taxi_Time', 'sum')
         ).reset_index()
+        
+        h_stats['Taxi_Ratio'] = np.where(h_stats['Sum_Delay'] > 0, 
+                                        (h_stats['Sum_Taxi_Delay'] / h_stats['Sum_Delay']) * 100, 0)
         
         w_hour = f_hour.groupby('Hour').agg(
             Avg_Temp=('Temp', 'mean'), Avg_Dew=('Dew_Point', 'mean'), Avg_Vis=('Visibility', 'mean'), Avg_Wind=('Wind_Spd', 'mean'), Avg_Precip=('Precip', 'mean')
@@ -103,9 +140,12 @@ with tab3:
         with c2:
             melt_h = h_stats.melt(id_vars=['Hour', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
             st.plotly_chart(px.line(melt_h, x='Hour', y='Time', color='STS_Detail', line_dash='Taxi_Type', markers=True, title="시간대별 평균 지상 이동시간"), use_container_width=True)
+        
+        st.subheader("🚥 시간대별 지연 인과율")
+        st.plotly_chart(px.area(h_stats, x='Hour', y='Taxi_Ratio', color='STS_Detail', title="해당 시간대 지연시간 중 지상이동(Taxi)이 차지하는 비중 (%)"), use_container_width=True)
             
         st.divider()
-        selected_weather = st.multiselect("기상 지표 선택", options=["기온 (°C)", "이슬점 온도 (°C)", "시정 (m)", "풍속 (KT)", "강수량 (mm)"], default=["기온 (°C)", "시정 (m)"])
+        selected_weather = st.multiselect("🌤️ 기상 지표 선택 (다중 선택)", options=["기온 (°C)", "이슬점 온도 (°C)", "시정 (m)", "풍속 (KT)", "강수량 (mm)"], default=["기온 (°C)", "시정 (m)"])
         w_map = {"기온 (°C)": "Avg_Temp", "이슬점 온도 (°C)": "Avg_Dew", "시정 (m)": "Avg_Vis", "풍속 (KT)": "Avg_Wind", "강수량 (mm)": "Avg_Precip"}
         
         if selected_weather:
@@ -117,6 +157,7 @@ with tab3:
                 if w_name == "강수량 (mm)": fig_w.add_trace(go.Bar(x=w_hour['Hour'], y=w_hour[col], name=w_name, marker_color=colors[i]), secondary_y=is_sec)
                 else: fig_w.add_trace(go.Scatter(x=w_hour['Hour'], y=w_hour[col], name=w_name, line=dict(color=colors[i])), secondary_y=is_sec)
             fig_w.update_layout(title="시간대별 평균 기상 트렌드", hovermode="x unified")
+            fig_w.update_xaxes(tickmode='linear', tick0=0, dtick=1)
             st.plotly_chart(fig_w, use_container_width=True)
 
 # ------------------------------------------
