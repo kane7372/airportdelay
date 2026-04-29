@@ -15,8 +15,8 @@ st.set_page_config(page_title="Incheon Airport Ultimate Dashboard", layout="wide
 # ==========================================
 @st.cache_data
 def load_data():
-    if not os.path.exists('master_dashboard_data.csv'):
-        return None, "🚨 'master_dashboard_data.csv' 파일이 없습니다. 먼저 데이터 전처리 스크립트를 실행해주세요!"
+    if not os.path.exists('master_dashboard_data.parquet'):
+        return None, "🚨 'master_dashboard_data.parquet' 파일이 없습니다. 먼저 데이터 전처리 스크립트를 실행해주세요!"
     
     # df = pd.read_csv('master_dashboard_data.csv', parse_dates=['STD_Full', 'RAM_Full'])
     
