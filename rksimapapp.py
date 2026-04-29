@@ -18,7 +18,9 @@ def load_data():
     if not os.path.exists('master_dashboard_data.csv'):
         return None, "🚨 'master_dashboard_data.csv' 파일이 없습니다. 먼저 데이터 전처리 스크립트를 실행해주세요!"
     
-    df = pd.read_csv('master_dashboard_data.csv', parse_dates=['STD_Full', 'RAM_Full'])
+    # df = pd.read_csv('master_dashboard_data.csv', parse_dates=['STD_Full', 'RAM_Full'])
+    
+    df = pd.read_parquet('master_dashboard_data.parquet')
     df['Date_Only'] = pd.to_datetime(df['Date_Only']).dt.date
     
     # [신규 추가] 지연시간 대비 지상이동시간(Taxi) 비율 계산을 위한 사전 작업
