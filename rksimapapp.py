@@ -19,7 +19,7 @@ def load_data():
     if not os.path.exists(file_path):
         file_path = 'master_dashboard_data.csv'
         if not os.path.exists(file_path):
-            return None, "🚨 'master_dashboard_data.csv(또는 parquet)' 파일이 없습니다. 전처리 스크립트를 먼저 실행해주세요!"
+            return None, "🚨 'master_dashboard_data.parquet(또는 csv)' 파일이 없습니다. 전처리 스크립트를 먼저 실행해주세요!"
     
     try:
         if file_path.endswith('.parquet'):
@@ -33,6 +33,18 @@ def load_data():
         df['Delayed_Total_Time'] = np.where(df['Is_Delayed'] & (df['Total_Delay'] > 0), df['Total_Delay'], 0)
         df['Delayed_Taxi_Time'] = np.where(df['Is_Delayed'] & (df['Total_Delay'] > 0), df['Taxi_Time'], 0)
         
+        # 🌟 [신규 추가] 항공사 그룹 자동 분류 로직
+        domestic_fsc = ['KAL', 'AAR']
+        domestic_lcc = ['JJA', 'JNA', 'TWB', 'ABL', 'ASV', 'ESR', 'APZ', 'FGW', 'ARO']
+        
+        def categorize_airline(code):
+            if pd.isna(code) or code == 'UNK': return '분류 불명 (Unknown)'
+            if code in domestic_fsc: return '국내 FSC (대형사)'
+            elif code in domestic_lcc: return '국내 LCC (저비용)'
+            else: return '외항사 (Foreign)'
+            
+        df['Airline_Group'] = df['Airline'].apply(categorize_airline)
+        
         return df, "Success"
     except Exception as e:
         return None, f"🚨 데이터 로딩 중 오류가 발생했습니다: {str(e)}"
@@ -44,26 +56,44 @@ if flights_raw is None:
     st.stop()
 
 # ==========================================
-# 🌟 좌측 사이드바 글로벌 필터 (Global Filters)
+# 🌟 좌측 사이드바 글로벌 필터 (Cascading Filters)
 # ==========================================
 st.sidebar.header("🎯 통합 데이터 필터")
 st.sidebar.markdown("이곳에서 선택한 조건이 **모든 탭의 차트에 즉시 반영**됩니다.")
 
 # 1. 여객/화물 (Pax/Cgo) 필터
 available_pax_cgo = sorted(flights_raw['Pax_Cgo'].dropna().unique().tolist())
-selected_pax_cgo = st.sidebar.multiselect("여객/화물 구분 (Pax/Cgo)", options=available_pax_cgo, default=available_pax_cgo)
+selected_pax_cgo = st.sidebar.multiselect("1️⃣ 여객/화물 구분 (Pax/Cgo)", options=available_pax_cgo, default=available_pax_cgo)
 
 # 2. 운항 상태 (STS_Detail) 필터
 available_sts = sorted(flights_raw['STS_Detail'].dropna().unique().tolist())
-selected_sts = st.sidebar.multiselect("운항 상태 상세 (STS)", options=available_sts, default=available_sts)
+selected_sts = st.sidebar.multiselect("2️⃣ 운항 상태 상세 (STS)", options=available_sts, default=available_sts)
 
-# 3. [신규] 항공사 (Airline) 필터
-available_airlines = sorted(flights_raw['Airline'].dropna().unique().tolist())
+st.sidebar.divider()
+
+# 3. 🌟 [연동형] 항공사 그룹 필터
+st.sidebar.markdown("### ✈️ 항공사 선택 (그룹 연동)")
+available_groups = ["국내 FSC (대형사)", "국내 LCC (저비용)", "외항사 (Foreign)", "분류 불명 (Unknown)"]
+# 데이터에 존재하는 그룹만 추출
+active_groups = [g for g in available_groups if g in flights_raw['Airline_Group'].unique()]
+
+selected_groups = st.sidebar.multiselect(
+    "3️⃣-A. 항공사 그룹 선택", 
+    options=active_groups, 
+    default=active_groups
+)
+
+# 4. 🌟 [연동형] 개별 항공사 필터 (위에서 선택한 그룹에 따라 목록이 바뀜)
+if selected_groups:
+    filtered_airline_list = sorted(flights_raw[flights_raw['Airline_Group'].isin(selected_groups)]['Airline'].dropna().unique().tolist())
+else:
+    filtered_airline_list = []
+
 selected_airlines = st.sidebar.multiselect(
-    "항공사 선택 (Airline)", 
-    options=available_airlines, 
-    default=available_airlines,
-    help="특정 항공사만 골라서 비교 분석할 수 있습니다."
+    "3️⃣-B. 개별 항공사 선택", 
+    options=filtered_airline_list, 
+    default=filtered_airline_list,
+    help="위에서 선택한 그룹에 속한 항공사만 표시됩니다. 특정 항공사만 콕 집어서 제외할 수도 있습니다."
 )
 
 st.sidebar.divider()
@@ -73,7 +103,7 @@ st.sidebar.divider()
 # ==========================================
 if not selected_pax_cgo: selected_pax_cgo = available_pax_cgo
 if not selected_sts: selected_sts = available_sts
-if not selected_airlines: selected_airlines = available_airlines
+if not selected_airlines: selected_airlines = filtered_airline_list # 빈 값일 경우를 대비한 방어
 
 flights = flights_raw[
     (flights_raw['Pax_Cgo'].isin(selected_pax_cgo)) & 
@@ -90,7 +120,6 @@ if flights.empty:
     st.warning("⚠️ 선택하신 필터 조건에 맞는 데이터가 없습니다. 좌측 사이드바 필터를 변경해 주세요.")
     st.stop()
 
-# [신규] 5번째 항공사 탭 추가!
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📅 1. 월별 통계", 
     "📆 2. 일별 통계", 
@@ -224,20 +253,20 @@ with tab4:
 
     c_dict = {'Normal': 'green', 'Ramp (Gate)': 'red', 'Taxi (Ground)': 'orange', 'Cancelled (CNL)': 'black'}
     for _, row in map_flights.iterrows():
-        popup = f"<b>{row['FLT']} ({row['Airline']} | {row['STS_Detail']} - {row['Pax_Cgo']})</b><br>Delay: {row['Delay_Cause']}<br>Total: {row['Total_Delay']:.0f}m"
+        popup = f"<b>{row['FLT']} ({row['Airline_Group']} | {row['STS_Detail']})</b><br>Delay: {row['Delay_Cause']}<br>Total: {row['Total_Delay']:.0f}m"
         folium.Marker([row['Lat'], row['Lon']], popup=popup, tooltip=row['FLT'], icon=folium.Icon(color=c_dict.get(row['Delay_Cause'], 'blue'), icon='plane')).add_to(m)
 
     st_folium(m, width="100%", height=600)
 
 # ------------------------------------------
-# 🌟 [TAB 5] 신규: 항공사별 통계 (Airline)
+# [TAB 5] 항공사별 통계 (Airline)
 # ------------------------------------------
 with tab5:
     st.header("✈️ 항공사별 종합 운영 퍼포먼스")
-    st.markdown("항공사별 운항 점유율, 지연율, 그리고 지상이동(Taxi) 효율성을 비교합니다.")
+    st.markdown("항공사 그룹 및 개별 항공사별 운항 점유율, 지연율, 지상이동 효율성을 비교합니다.")
     
     # 1. 데이터 집계
-    airline_stats = flights.groupby('Airline').agg(
+    airline_stats = flights.groupby(['Airline_Group', 'Airline']).agg(
         Flight_Count=('FLT', 'count'),
         Delay_Count=('Is_Delayed', 'sum'),
         Avg_Delay_Time=('Total_Delay', lambda x: x[x > 15].mean() if len(x[x > 15]) > 0 else 0),
@@ -245,40 +274,35 @@ with tab5:
         Avg_Taxi_In=('Taxi_In', 'mean')
     ).reset_index()
     
-    # 지연율(%) 계산 및 운항 편수 기준 내림차순 정렬 (주요 항공사가 앞에 오도록)
     airline_stats['Delay_Rate(%)'] = (airline_stats['Delay_Count'] / airline_stats['Flight_Count']) * 100
     airline_stats = airline_stats.sort_values('Flight_Count', ascending=False)
     
-    # 만약 항공사가 너무 많으면 상위 N개만 볼 수 있는 옵션 제공
-    top_n = st.slider("그래프에 표시할 상위 항공사 수 (운항 편수 기준)", min_value=5, max_value=len(airline_stats), value=min(20, len(airline_stats)))
+    top_n = st.slider("그래프에 표시할 상위 항공사 수 (운항 편수 기준)", min_value=5, max_value=len(airline_stats) if len(airline_stats) > 0 else 5, value=min(20, len(airline_stats)))
     view_stats = airline_stats.head(top_n)
     
-    # 2. 총 운항 편수 및 지연 건수 차트
-    fig_a1 = px.bar(view_stats, x='Airline', y=['Flight_Count', 'Delay_Count'], 
-                    title=f"상위 {top_n}개 항공사 운항 편수 대비 지연 건수", barmode='group',
-                    labels={'value': '건수 (편)', 'variable': '구분'})
-    st.plotly_chart(fig_a1, use_container_width=True)
+    if not view_stats.empty:
+        # 그룹별 색상 매핑을 위해 Airline_Group 사용
+        fig_a1 = px.bar(view_stats, x='Airline', y=['Flight_Count', 'Delay_Count'], 
+                        title=f"상위 {top_n}개 항공사 운항 편수 대비 지연 건수", barmode='group',
+                        labels={'value': '건수 (편)', 'variable': '구분'})
+        st.plotly_chart(fig_a1, use_container_width=True)
+        
+        fig_a2 = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_a2.add_trace(go.Bar(x=view_stats['Airline'], y=view_stats['Avg_Delay_Time'], name="평균 지연시간 (분)", marker_color='#FFA15A'), secondary_y=False)
+        fig_a2.add_trace(go.Scatter(x=view_stats['Airline'], y=view_stats['Delay_Rate(%)'], name="지연율 (%)", mode='lines+markers', line=dict(color='#EF553B', width=3)), secondary_y=True)
+        fig_a2.update_layout(title=f"상위 {top_n}개 항공사 평균 지연시간 및 지연율", hovermode="x unified")
+        fig_a2.update_yaxes(title_text="평균 지연시간 (분)", secondary_y=False)
+        fig_a2.update_yaxes(title_text="지연율 (%)", secondary_y=True)
+        st.plotly_chart(fig_a2, use_container_width=True)
+        
+        melted_taxi = view_stats.melt(id_vars=['Airline', 'Airline_Group'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
+        if not melted_taxi.empty:
+            fig_a3 = px.bar(melted_taxi, x='Airline', y='Time', color='Taxi_Type', barmode='group', 
+                            title=f"상위 {top_n}개 항공사 평균 지상이동시간", hover_data=['Airline_Group'])
+            st.plotly_chart(fig_a3, use_container_width=True)
     
-    # 3. 평균 지연 시간 및 지연율 차트 (이중 축)
-    fig_a2 = make_subplots(specs=[[{"secondary_y": True}]])
-    fig_a2.add_trace(go.Bar(x=view_stats['Airline'], y=view_stats['Avg_Delay_Time'], name="평균 지연시간 (분)", marker_color='#FFA15A'), secondary_y=False)
-    fig_a2.add_trace(go.Scatter(x=view_stats['Airline'], y=view_stats['Delay_Rate(%)'], name="지연율 (%)", mode='lines+markers', line=dict(color='#EF553B', width=3)), secondary_y=True)
-    fig_a2.update_layout(title=f"상위 {top_n}개 항공사 평균 지연시간 및 지연율", hovermode="x unified")
-    fig_a2.update_yaxes(title_text="평균 지연시간 (분)", secondary_y=False)
-    fig_a2.update_yaxes(title_text="지연율 (%)", secondary_y=True)
-    st.plotly_chart(fig_a2, use_container_width=True)
-    
-    # 4. 평균 지상이동시간 (Taxi-Out/In)
-    melted_taxi = view_stats.melt(id_vars=['Airline'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
-    if not melted_taxi.empty:
-        fig_a3 = px.bar(melted_taxi, x='Airline', y='Time', color='Taxi_Type', barmode='group', 
-                        title=f"상위 {top_n}개 항공사 평균 지상이동시간 (Taxi-Out/In)",
-                        labels={'Time': '평균 시간 (분)'})
-        st.plotly_chart(fig_a3, use_container_width=True)
-    
-    # 5. 원시 데이터 표 (Raw Data)
     st.divider()
-    st.subheader("📊 항공사별 상세 통계 표 (전체)")
+    st.subheader("📊 항공사별 상세 통계 표")
     st.dataframe(
         airline_stats.style.format({
             'Avg_Delay_Time': '{:.1f} 분',
