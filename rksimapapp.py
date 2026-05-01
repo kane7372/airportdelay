@@ -288,17 +288,51 @@ with tab4:
         c3.metric("풍속 / 풍향", f"{map_flights['Wind_Spd'].iloc[0]}KT / {map_flights['Wind_Dir'].iloc[0]}°")
         c4.metric("기상 (WMO)", map_flights['Weather_Desc'].iloc[0])
 
-    m = folium.Map(location=[37.46, 126.44], zoom_start=13)
+    # 인천공항 중심 좌표
+    m = folium.Map(location=[37.46, 126.44], zoom_start=14)
+    
+    # 1. 활주로(Runway) 마커 추가 (회색 비행기)
     runways = {'33L': (37.4541, 126.4608), '15R': (37.4816, 126.4363), '34R': (37.4433, 126.4416), '16L': (37.4700, 126.4170)}
-    for r, c in runways.items(): folium.Marker(c, popup=r, icon=folium.Icon(color='gray', icon='plane')).add_to(m)
+    for r, c in runways.items(): 
+        folium.Marker(c, tooltip=f"Runway {r}", icon=folium.Icon(color='lightgray', icon='road', prefix='fa')).add_to(m)
 
+    # 🌟 2. [신규 추가] 제방빙장(De-icing Pad) 마커 고정 표시 (눈꽃 아이콘)
+    try:
+        # 주기장 데이터셋을 다시 로드하여 제방빙장 위치만 추출
+        zone_file = 'rksi_stands_zoned.csv'
+        if os.path.exists('rksi_stands_zoned (2).csv'): zone_file = 'rksi_stands_zoned (2).csv'
+        df_pads = pd.read_csv(zone_file)
+        
+        # 'De-icing Apron' 카테고리만 필터링
+        deice_pads = df_pads[df_pads['Category'].astype(str).str.contains('De-icing', case=False, na=False)]
+        
+        for _, pad in deice_pads.iterrows():
+            folium.Marker(
+                [pad['Lat'], pad['Lon']], 
+                tooltip=f"❄️ 제방빙장 (Stand {pad['Stand_ID']})",
+                icon=folium.Icon(color='lightblue', icon='snowflake-o', prefix='fa')
+            ).add_to(m)
+    except Exception as e:
+        pass # 파일이 없거나 오류가 나면 무시하고 패스
+
+    # 3. 항공편(Flight) 마커 추가
     c_dict = {'Normal': 'green', 'Ramp (Gate)': 'red', 'Taxi (Ground)': 'orange', 'Cancelled (CNL)': 'black'}
     for _, row in map_flights.iterrows():
-        popup = f"<b>{row['FLT']} ({row['Airline_Group']} | {row['STS_Detail']})</b><br>Delay: {row['Delay_Cause']}<br>Total: {row['Total_Delay']:.0f}m"
-        folium.Marker([row['Lat'], row['Lon']], popup=popup, tooltip=row['FLT'], icon=folium.Icon(color=c_dict.get(row['Delay_Cause'], 'blue'), icon='plane')).add_to(m)
+        is_dep = row['Flight_Dir'] == 'DEP'
+        dir_label = "🛫 출발" if is_dep else "🛬 도착"
+        fa_icon = "plane-departure" if is_dep else "plane-arrival"
+        
+        popup = f"<b>{row['FLT']} ({dir_label})</b><br>{row['Airline_Group']} | {row['STS_Detail']}<br>Delay: {row['Delay_Cause']}<br>Total: {row['Total_Delay']:.0f}m"
+        tooltip_text = f"{row['FLT']} ({dir_label})"
+        
+        folium.Marker(
+            [row['Lat'], row['Lon']], 
+            popup=popup, 
+            tooltip=tooltip_text, 
+            icon=folium.Icon(color=c_dict.get(row['Delay_Cause'], 'blue'), icon=fa_icon, prefix='fa')
+        ).add_to(m)
 
-    st_folium(m, width="100%", height=600)
-
+    st_folium(m, width="100%", height=650)
 # ------------------------------------------
 # [TAB 5] 항공사별 통계
 # ------------------------------------------
