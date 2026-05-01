@@ -357,6 +357,50 @@ with tab3:
                     use_container_width=True
                 )
             st.divider()
+
+            # =========================================================
+            # 🌟 [신규 추가] 3. 강설 여파 회복 곡선 (Recovery Curve) -> Expander 적용
+            # =========================================================
+            with st.expander("📉 강설 영향권별 지상운영 회복 곡선 보기 (클릭하여 펼치기)"):
+                st.markdown("눈이 내리는 시점(1단계)부터 공항 운영이 정상화(6단계)되기까지, **시간 경과에 따른 지상이동시간의 전체 회복 탄력성(Resilience)**을 시각화합니다.")
+
+                recovery_stats = f_hour.groupby('Snow_Status').agg(
+                    Avg_Taxi_Out=('Taxi_Out', 'mean'),
+                    Avg_Taxi_In=('Taxi_In', 'mean')
+                ).reset_index()
+
+                melt_recovery = recovery_stats.melt(
+                    id_vars=['Snow_Status'], 
+                    value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
+                    var_name='Taxi_Type', 
+                    value_name='Time'
+                ).dropna()
+
+                if not melt_recovery.empty:
+                    fig_rec = px.line(
+                        melt_recovery, 
+                        x='Snow_Status', 
+                        y='Time', 
+                        color='Taxi_Type',
+                        markers=True, 
+                        text='Time',
+                        title="강설 영향권 6단계에 따른 평균 지상이동시간 변화 및 회복 추이",
+                        color_discrete_map={'Avg_Taxi_Out': '#EF553B', 'Avg_Taxi_In': '#00CC96'}
+                    )
+                    
+                    fig_rec.update_traces(
+                        texttemplate='%{text:.1f}분', 
+                        textposition='top center', 
+                        line=dict(width=4), 
+                        marker=dict(size=12)
+                    )
+                    fig_rec.update_layout(hovermode="x unified")
+                    fig_rec.update_yaxes(title_text="평균 소요 시간 (분)")
+                    fig_rec.update_xaxes(title_text="강설 영향권 (회복 단계)")
+                    
+                    st.plotly_chart(fig_rec, use_container_width=True)
+            st.divider()
+            
             selected_weather = st.multiselect("🌤️ 기상 지표 선택", options=["기온 (°C)", "이슬점 온도 (°C)", "시정 (m)", "풍속 (KT)", "강수량 (mm)"], default=["기온 (°C)", "시정 (m)"])
             w_map = {"기온 (°C)": "Avg_Temp", "이슬점 온도 (°C)": "Avg_Dew", "시정 (m)": "Avg_Vis", "풍속 (KT)": "Avg_Wind", "강수량 (mm)": "Avg_Precip"}
             if selected_weather:
@@ -481,6 +525,33 @@ with tab5:
             fig_a3 = px.bar(melted_taxi, x='Airline', y='Time', color='Taxi_Type', barmode='group', 
                             title=f"상위 {top_n}개 항공사 평균 지상이동시간", hover_data=['Airline_Group'])
             st.plotly_chart(fig_a3, use_container_width=True)
+        
+        # =========================================================
+        # 🌟 [신규 추가] 항공사 그룹별 강설 회복 탄력성 (FSC vs LCC 비교)
+        # =========================================================
+        st.divider()
+        with st.expander("📉 항공사 그룹별 강설 회복 곡선 (FSC vs LCC) 보기 (클릭하여 펼치기)"):
+            st.markdown("**대형사(FSC)와 저비용항공사(LCC)** 등 항공사 그룹별로 눈보라 이후 지상이동시간이 얼마나 빨리 정상화되는지 '인프라 회복력'을 직접 비교합니다.")
+            
+            # 이륙 전 제빙 및 대기 시간이 가장 중요하므로 'Taxi-Out'을 기준으로 그룹핑
+            airline_recovery = flights.groupby(['Snow_Status', 'Airline_Group'])['Taxi_Out'].mean().reset_index()
+            
+            if not airline_recovery.empty:
+                fig_a_rec = px.line(
+                    airline_recovery, 
+                    x='Snow_Status', 
+                    y='Taxi_Out', 
+                    color='Airline_Group',
+                    markers=True,
+                    title="항공사 그룹별 강설 영향권에 따른 평균 Taxi-Out 회복 추이"
+                )
+                fig_a_rec.update_traces(line=dict(width=4), marker=dict(size=10))
+                fig_a_rec.update_layout(hovermode="x unified")
+                fig_a_rec.update_yaxes(title_text="평균 Taxi-Out 시간 (분)")
+                fig_a_rec.update_xaxes(title_text="강설 영향권 (회복 단계)")
+                
+                st.plotly_chart(fig_a_rec, use_container_width=True)
+
     
     st.divider()
     st.subheader("📊 항공사별 상세 통계 표")
