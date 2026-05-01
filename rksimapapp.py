@@ -309,24 +309,43 @@ with tab3:
                 )
             
             # =========================================================
-            # 2. 일별 & 강설 영향권별 상세 표 -> Expander 적용
+            # 2. 일별 & 강설 영향권별 상세 표 -> Expander 적용 (기상 현상 추가)
             # =========================================================
             with st.expander("📅 선택 기간 내 일별 & 강설 영향권별 지상이동시간 상세 표 보기 (클릭하여 펼치기)"):
                 st.markdown("달력에서 선택한 기간 동안의 하루하루를 **'눈 내린 상황'**에 따라 쪼개어 보여줍니다. (시간이 오래 걸릴수록 붉은색으로 표시됩니다.)")
                 
+                # 기상 현상(Weather_Desc)을 요약하기 위한 커스텀 함수
+                def get_weather_summary(x):
+                    w_list = [str(w) for w in x.dropna().unique() if str(w) not in ['-', 'UNK']]
+                    if not w_list: return '알 수 없음'
+                    # '일반' 외에 강설, 안개 등 특이 기상이 있으면 '일반' 글자는 빼고 핵심만 보여줌
+                    severe_w = [w for w in w_list if w != '일반']
+                    return ', '.join(severe_w) if severe_w else '일반 (맑음)'
+
+                # 집계 로직에 '기온'과 '기상 현상' 추가
                 daily_snow_tab3 = f_hour.groupby(['Date_Only', 'Snow_Status']).agg(
                     Flight_Count=('FLT', 'count'),
                     Avg_Taxi_Out=('Taxi_Out', 'mean'),
-                    Avg_Taxi_In=('Taxi_In', 'mean')
+                    Avg_Taxi_In=('Taxi_In', 'mean'),
+                    Avg_Temp=('Temp', 'mean'),
+                    Weather_Info=('Weather_Desc', get_weather_summary)
                 ).reset_index()
                 
+                # 날짜 및 강설 심각도 순 정렬
                 daily_snow_tab3 = daily_snow_tab3.sort_values(by=['Date_Only', 'Snow_Status'])
+                
+                # 직관적인 컬럼명으로 변경
+                daily_snow_tab3 = daily_snow_tab3.rename(columns={
+                    'Weather_Info': '주요 기상 현상', 
+                    'Avg_Temp': '평균 기온'
+                })
                 
                 st.dataframe(
                     daily_snow_tab3.style.format({
                         'Flight_Count': '{:,.0f} 편',
                         'Avg_Taxi_Out': '{:.1f} 분',
-                        'Avg_Taxi_In': '{:.1f} 분'
+                        'Avg_Taxi_In': '{:.1f} 분',
+                        '평균 기온': '{:.1f} °C'
                     }).background_gradient(
                         subset=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
                         cmap='OrRd' 
