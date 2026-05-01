@@ -307,10 +307,15 @@ with tab4:
         deice_pads = df_pads[df_pads['Category'].astype(str).str.contains('De-icing', case=False, na=False)]
         
         for _, pad in deice_pads.iterrows():
-            folium.Marker(
-                [pad['Lat'], pad['Lon']], 
-                tooltip=f"❄️ 제방빙장 (Stand {pad['Stand_ID']})",
-                icon=folium.Icon(color='lightblue', icon='snowflake-o', prefix='fa')
+            folium.CircleMarker(
+                location=[pad['Lat'], pad['Lon']],
+                radius=5,                 # 🌟 원의 크기 (숫자를 줄이면 더 작아집니다)
+                color='#1E90FF',          # 테두리 색상 (진한 파란색)
+                weight=2,                 # 테두리 두께
+                fill=True,                # 원 안을 색으로 채움
+                fill_color='#87CEFA',     # 채우기 색상 (연한 파란색)
+                fill_opacity=0.7,         # 투명도
+                tooltip=f"❄️ 제방빙장 (Stand {pad['Stand_ID']})"
             ).add_to(m)
     except Exception as e:
         pass # 파일이 없거나 오류가 나면 무시하고 패스
