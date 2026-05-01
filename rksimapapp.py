@@ -19,7 +19,7 @@ def load_data():
     if not os.path.exists(file_path):
         file_path = 'master_dashboard_data.csv'
         if not os.path.exists(file_path):
-            return None, "🚨 'master_dashboard_data.parquet(또는 csv)' 파일이 없습니다. 전처리 스크립트를 먼저 실행해주세요!"
+            return None, "🚨 'master_dashboard_data.parquet' 파일이 없습니다. 전처리 스크립트를 먼저 실행해주세요!"
     
     try:
         if file_path.endswith('.parquet'):
@@ -55,16 +55,24 @@ if flights_raw is None:
     st.stop()
 
 # ==========================================
-# 🌟 좌측 사이드바 글로벌 필터 (Cascading & Snow Impact)
+# 🌟 좌측 사이드바 글로벌 필터 
 # ==========================================
 st.sidebar.header("🎯 통합 데이터 필터")
-st.sidebar.markdown("이곳에서 선택한 조건이 **모든 탭의 차트에 즉시 반영**됩니다.")
 
-# 1. 여객/화물 (Pax/Cgo) 필터
+# 0. [신규 추가] 이상치 필터 토글 스위치
+st.sidebar.markdown("### 🧹 데이터 클렌징 필터")
+exclude_outliers = st.sidebar.checkbox(
+    "비정상 지상이동시간 제외 (3-Sigma)", 
+    value=True, 
+    help="체크를 해제하면 24시간(1440분) 등 입력 오류로 추정되는 극단적인 이상치를 포함하여 원본 그대로 분석합니다."
+)
+st.sidebar.divider()
+
+# 1. 여객/화물 필터
 available_pax_cgo = sorted(flights_raw['Pax_Cgo'].dropna().unique().tolist())
 selected_pax_cgo = st.sidebar.multiselect("1️⃣ 여객/화물 구분 (Pax/Cgo)", options=available_pax_cgo, default=available_pax_cgo)
 
-# 2. 운항 상태 (STS_Detail) 필터
+# 2. 운항 상태 필터
 available_sts = sorted(flights_raw['STS_Detail'].dropna().unique().tolist())
 selected_sts = st.sidebar.multiselect("2️⃣ 운항 상태 상세 (STS)", options=available_sts, default=available_sts)
 
@@ -85,20 +93,18 @@ else:
 selected_airlines = st.sidebar.multiselect(
     "3️⃣-B. 개별 항공사 선택", 
     options=filtered_airline_list, 
-    default=filtered_airline_list,
-    help="위 그룹에 속한 항공사만 표시됩니다."
+    default=filtered_airline_list
 )
 
 st.sidebar.divider()
 
-# 4. 🌟 [신규] 강설 영향권 세부 필터
+# 4. 강설 영향권 필터
 st.sidebar.markdown("### ❄️ 강설 여파(Snow Impact) 필터")
 available_snow = sorted(flights_raw['Snow_Status'].dropna().unique().tolist())
 selected_snow = st.sidebar.multiselect(
     "4️⃣ 강설 영향권 선택", 
     options=available_snow, 
-    default=available_snow,
-    help="눈이 집중적으로 내리던 시간에 운항한 항공편만 골라낼 수 있습니다."
+    default=available_snow
 )
 
 # ==========================================
@@ -109,12 +115,17 @@ if not selected_sts: selected_sts = available_sts
 if not selected_airlines: selected_airlines = filtered_airline_list 
 if not selected_snow: selected_snow = available_snow
 
+# 🌟 이상치 제외 여부에 따른 마스터 데이터셋 구축
 flights = flights_raw[
     (flights_raw['Pax_Cgo'].isin(selected_pax_cgo)) & 
     (flights_raw['STS_Detail'].isin(selected_sts)) &
     (flights_raw['Airline'].isin(selected_airlines)) &
     (flights_raw['Snow_Status'].isin(selected_snow))
 ].copy()
+
+# 토글 스위치가 켜져있고, Outlier 컬럼이 존재하면 제외 실행!
+if exclude_outliers and 'Is_Taxi_Outlier' in flights.columns:
+    flights = flights[flights['Is_Taxi_Outlier'] == False]
 
 # ==========================================
 # 2. UI Layout & Tabs
