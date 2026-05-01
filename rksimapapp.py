@@ -33,7 +33,6 @@ def load_data():
         df['Delayed_Total_Time'] = np.where(df['Is_Delayed'] & (df['Total_Delay'] > 0), df['Total_Delay'], 0)
         df['Delayed_Taxi_Time'] = np.where(df['Is_Delayed'] & (df['Total_Delay'] > 0), df['Taxi_Time'], 0)
         
-        # 🌟 [신규 추가] 항공사 그룹 자동 분류 로직
         domestic_fsc = ['KAL', 'AAR']
         domestic_lcc = ['JJA', 'JNA', 'TWB', 'ABL', 'ASV', 'ESR', 'APZ', 'FGW', 'ARO']
         
@@ -56,7 +55,7 @@ if flights_raw is None:
     st.stop()
 
 # ==========================================
-# 🌟 좌측 사이드바 글로벌 필터 (Cascading Filters)
+# 🌟 좌측 사이드바 글로벌 필터 (Cascading & Snow Impact)
 # ==========================================
 st.sidebar.header("🎯 통합 데이터 필터")
 st.sidebar.markdown("이곳에서 선택한 조건이 **모든 탭의 차트에 즉시 반영**됩니다.")
@@ -71,19 +70,13 @@ selected_sts = st.sidebar.multiselect("2️⃣ 운항 상태 상세 (STS)", opti
 
 st.sidebar.divider()
 
-# 3. 🌟 [연동형] 항공사 그룹 필터
+# 3. 항공사 그룹 연동 필터
 st.sidebar.markdown("### ✈️ 항공사 선택 (그룹 연동)")
 available_groups = ["국내 FSC (대형사)", "국내 LCC (저비용)", "외항사 (Foreign)", "분류 불명 (Unknown)"]
-# 데이터에 존재하는 그룹만 추출
 active_groups = [g for g in available_groups if g in flights_raw['Airline_Group'].unique()]
 
-selected_groups = st.sidebar.multiselect(
-    "3️⃣-A. 항공사 그룹 선택", 
-    options=active_groups, 
-    default=active_groups
-)
+selected_groups = st.sidebar.multiselect("3️⃣-A. 항공사 그룹 선택", options=active_groups, default=active_groups)
 
-# 4. 🌟 [연동형] 개별 항공사 필터 (위에서 선택한 그룹에 따라 목록이 바뀜)
 if selected_groups:
     filtered_airline_list = sorted(flights_raw[flights_raw['Airline_Group'].isin(selected_groups)]['Airline'].dropna().unique().tolist())
 else:
@@ -93,22 +86,34 @@ selected_airlines = st.sidebar.multiselect(
     "3️⃣-B. 개별 항공사 선택", 
     options=filtered_airline_list, 
     default=filtered_airline_list,
-    help="위에서 선택한 그룹에 속한 항공사만 표시됩니다. 특정 항공사만 콕 집어서 제외할 수도 있습니다."
+    help="위 그룹에 속한 항공사만 표시됩니다."
 )
 
 st.sidebar.divider()
+
+# 4. 🌟 [신규] 강설 영향권 세부 필터
+st.sidebar.markdown("### ❄️ 강설 여파(Snow Impact) 필터")
+available_snow = sorted(flights_raw['Snow_Status'].dropna().unique().tolist())
+selected_snow = st.sidebar.multiselect(
+    "4️⃣ 강설 영향권 선택", 
+    options=available_snow, 
+    default=available_snow,
+    help="눈이 집중적으로 내리던 시간에 운항한 항공편만 골라낼 수 있습니다."
+)
 
 # ==========================================
 # 데이터 필터링 적용 (Filtered Data)
 # ==========================================
 if not selected_pax_cgo: selected_pax_cgo = available_pax_cgo
 if not selected_sts: selected_sts = available_sts
-if not selected_airlines: selected_airlines = filtered_airline_list # 빈 값일 경우를 대비한 방어
+if not selected_airlines: selected_airlines = filtered_airline_list 
+if not selected_snow: selected_snow = available_snow
 
 flights = flights_raw[
     (flights_raw['Pax_Cgo'].isin(selected_pax_cgo)) & 
     (flights_raw['STS_Detail'].isin(selected_sts)) &
-    (flights_raw['Airline'].isin(selected_airlines))
+    (flights_raw['Airline'].isin(selected_airlines)) &
+    (flights_raw['Snow_Status'].isin(selected_snow))
 ].copy()
 
 # ==========================================
@@ -129,7 +134,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ------------------------------------------
-# [TAB 1] 월별 통계 (Monthly)
+# [TAB 1] 월별 통계
 # ------------------------------------------
 with tab1:
     st.header("📅 월별 운항 및 지연 트렌드")
@@ -155,7 +160,7 @@ with tab1:
     st.plotly_chart(px.line(monthly_stats, x='YM', y='Taxi_Ratio', color='STS_Detail', markers=True, title="월별 지연시간 대비 지상이동시간 비중 (%)"), use_container_width=True)
 
 # ------------------------------------------
-# [TAB 2] 일별 통계 (Daily)
+# [TAB 2] 일별 통계
 # ------------------------------------------
 with tab2:
     st.header("📆 일별 운항 및 지연 트렌드")
@@ -166,7 +171,6 @@ with tab2:
     ).reset_index()
     daily_stats['Taxi_Ratio'] = np.where(daily_stats['Sum_Delay'] > 0, (daily_stats['Sum_Taxi_Delay'] / daily_stats['Sum_Delay']) * 100, 0)
     
-    # 🌟 [신규 추가 1] 강설 여부에 따른 지상이동시간 요약 표
     st.subheader("❄️ 기상(강설) 여부에 따른 평균 지상이동시간 요약")
     snow_summary = flights.groupby('Snow_Status').agg(
         Flight_Count=('FLT', 'count'),
@@ -183,14 +187,12 @@ with tab2:
         use_container_width=True
     )
     
-    # 기존 차트
     melt_d = daily_stats.melt(id_vars=['Date_Only', 'STS_Detail', 'Snow_Status'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
     if not melt_d.empty:
-        fig_d = px.line(melt_d, x='Date_Only', y='Time', color='STS_Detail', line_dash='Taxi_Type', facet_row='Snow_Status', markers=True, height=600, title="일별 강설 여부에 따른 평균 지상이동시간 추이")
+        fig_d = px.line(melt_d, x='Date_Only', y='Time', color='STS_Detail', line_dash='Taxi_Type', facet_row='Snow_Status', markers=True, height=800, title="일별 강설 여부에 따른 평균 지상이동시간 추이")
         fig_d.update_yaxes(matches=None)
         st.plotly_chart(fig_d, use_container_width=True)
         
-        # 🌟 [신규 추가 2] 일별 상세 데이터 표 (공간 절약을 위해 Expander 사용)
         with st.expander("📅 일별 상세 통계 표 보기 (클릭하여 펼치기)"):
             st.dataframe(
                 daily_stats[['Date_Only', 'STS_Detail', 'Snow_Status', 'Flight_Count', 'Avg_Taxi_Out', 'Avg_Taxi_In']].sort_values('Date_Only').style.format({
@@ -203,8 +205,9 @@ with tab2:
     c1, c2 = st.columns(2)
     with c1: st.plotly_chart(px.bar(daily_stats, x='Date_Only', y='Delay_Count', color='STS_Detail', title="일별 지연 건수", barmode='stack'), use_container_width=True)
     with c2: st.plotly_chart(px.line(daily_stats, x='Date_Only', y='Taxi_Ratio', color='STS_Detail', markers=True, title="일별 지연시간 중 지상이동 비중(%)"), use_container_width=True)
+
 # ------------------------------------------
-# [TAB 3] 시간대별 통계 (Hourly)
+# [TAB 3] 시간대별 통계
 # ------------------------------------------
 with tab3:
     st.header("⏰ 시간대별 병목 현상 및 기상 연동 분석")
@@ -286,13 +289,12 @@ with tab4:
     st_folium(m, width="100%", height=600)
 
 # ------------------------------------------
-# [TAB 5] 항공사별 통계 (Airline)
+# [TAB 5] 항공사별 통계
 # ------------------------------------------
 with tab5:
     st.header("✈️ 항공사별 종합 운영 퍼포먼스")
     st.markdown("항공사 그룹 및 개별 항공사별 운항 점유율, 지연율, 지상이동 효율성을 비교합니다.")
     
-    # 1. 데이터 집계
     airline_stats = flights.groupby(['Airline_Group', 'Airline']).agg(
         Flight_Count=('FLT', 'count'),
         Delay_Count=('Is_Delayed', 'sum'),
@@ -308,7 +310,6 @@ with tab5:
     view_stats = airline_stats.head(top_n)
     
     if not view_stats.empty:
-        # 그룹별 색상 매핑을 위해 Airline_Group 사용
         fig_a1 = px.bar(view_stats, x='Airline', y=['Flight_Count', 'Delay_Count'], 
                         title=f"상위 {top_n}개 항공사 운항 편수 대비 지연 건수", barmode='group',
                         labels={'value': '건수 (편)', 'variable': '구분'})
