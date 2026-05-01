@@ -166,16 +166,43 @@ with tab2:
     ).reset_index()
     daily_stats['Taxi_Ratio'] = np.where(daily_stats['Sum_Delay'] > 0, (daily_stats['Sum_Taxi_Delay'] / daily_stats['Sum_Delay']) * 100, 0)
     
+    # 🌟 [신규 추가 1] 강설 여부에 따른 지상이동시간 요약 표
+    st.subheader("❄️ 기상(강설) 여부에 따른 평균 지상이동시간 요약")
+    snow_summary = flights.groupby('Snow_Status').agg(
+        Flight_Count=('FLT', 'count'),
+        Avg_Taxi_Out=('Taxi_Out', 'mean'),
+        Avg_Taxi_In=('Taxi_In', 'mean')
+    ).reset_index()
+    
+    st.dataframe(
+        snow_summary.style.format({
+            'Flight_Count': '{:,.0f} 편',
+            'Avg_Taxi_Out': '{:.1f} 분',
+            'Avg_Taxi_In': '{:.1f} 분'
+        }),
+        use_container_width=True
+    )
+    
+    # 기존 차트
     melt_d = daily_stats.melt(id_vars=['Date_Only', 'STS_Detail', 'Snow_Status'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
     if not melt_d.empty:
-        fig_d = px.line(melt_d, x='Date_Only', y='Time', color='STS_Detail', line_dash='Taxi_Type', facet_row='Snow_Status', markers=True, height=600, title="❄️ 강설 여부에 따른 평균 지상이동시간")
+        fig_d = px.line(melt_d, x='Date_Only', y='Time', color='STS_Detail', line_dash='Taxi_Type', facet_row='Snow_Status', markers=True, height=600, title="일별 강설 여부에 따른 평균 지상이동시간 추이")
         fig_d.update_yaxes(matches=None)
         st.plotly_chart(fig_d, use_container_width=True)
+        
+        # 🌟 [신규 추가 2] 일별 상세 데이터 표 (공간 절약을 위해 Expander 사용)
+        with st.expander("📅 일별 상세 통계 표 보기 (클릭하여 펼치기)"):
+            st.dataframe(
+                daily_stats[['Date_Only', 'STS_Detail', 'Snow_Status', 'Flight_Count', 'Avg_Taxi_Out', 'Avg_Taxi_In']].sort_values('Date_Only').style.format({
+                    'Avg_Taxi_Out': '{:.1f} 분',
+                    'Avg_Taxi_In': '{:.1f} 분'
+                }),
+                use_container_width=True
+            )
     
     c1, c2 = st.columns(2)
     with c1: st.plotly_chart(px.bar(daily_stats, x='Date_Only', y='Delay_Count', color='STS_Detail', title="일별 지연 건수", barmode='stack'), use_container_width=True)
     with c2: st.plotly_chart(px.line(daily_stats, x='Date_Only', y='Taxi_Ratio', color='STS_Detail', markers=True, title="일별 지연시간 중 지상이동 비중(%)"), use_container_width=True)
-
 # ------------------------------------------
 # [TAB 3] 시간대별 통계 (Hourly)
 # ------------------------------------------
