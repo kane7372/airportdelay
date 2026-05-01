@@ -182,13 +182,51 @@ with tab2:
     ).reset_index()
     daily_stats['Taxi_Ratio'] = np.where(daily_stats['Sum_Delay'] > 0, (daily_stats['Sum_Taxi_Delay'] / daily_stats['Sum_Delay']) * 100, 0)
     
-    st.subheader("❄️ 기상(강설) 여부에 따른 평균 지상이동시간 요약")
+    st.subheader("❄️ 기상(강설) 여부에 따른 지상이동시간 운영 임계점(Threshold) 분석")
+    st.markdown("각 강설 상태별 평균 시간과, 통계적 통제 한계선인 **2-Sigma(경고)** 및 **3-Sigma(심각/마비)** 상한선을 제시합니다.")
+    
+    # 1. 평균과 표준편차(std)를 함께 집계
     snow_summary = flights.groupby('Snow_Status').agg(
         Flight_Count=('FLT', 'count'),
         Avg_Taxi_Out=('Taxi_Out', 'mean'),
-        Avg_Taxi_In=('Taxi_In', 'mean')
+        Std_Taxi_Out=('Taxi_Out', 'std'),
+        Avg_Taxi_In=('Taxi_In', 'mean'),
+        Std_Taxi_In=('Taxi_In', 'std')
     ).reset_index()
     
+    # NaN 값(데이터가 1개뿐이어서 표준편차가 없는 경우 등) 방어
+    snow_summary = snow_summary.fillna(0)
+    
+    # 2. 2-Sigma, 3-Sigma 상한선(Upper Bound) 계산
+    snow_summary['Taxi_Out_2Sig'] = snow_summary['Avg_Taxi_Out'] + (2 * snow_summary['Std_Taxi_Out'])
+    snow_summary['Taxi_Out_3Sig'] = snow_summary['Avg_Taxi_Out'] + (3 * snow_summary['Std_Taxi_Out'])
+    
+    snow_summary['Taxi_In_2Sig'] = snow_summary['Avg_Taxi_In'] + (2 * snow_summary['Std_Taxi_In'])
+    snow_summary['Taxi_In_3Sig'] = snow_summary['Avg_Taxi_In'] + (3 * snow_summary['Std_Taxi_In'])
+    
+    # 3. 화면에 보여줄 컬럼만 선택 및 정렬
+    display_summary = snow_summary[[
+        'Snow_Status', 'Flight_Count', 
+        'Avg_Taxi_Out', 'Taxi_Out_2Sig', 'Taxi_Out_3Sig',
+        'Avg_Taxi_In', 'Taxi_In_2Sig', 'Taxi_In_3Sig'
+    ]]
+    
+    # 4. 표 렌더링 (보기 좋게 포맷팅)
+    st.dataframe(
+        display_summary.style.format({
+            'Flight_Count': '{:,.0f} 편',
+            'Avg_Taxi_Out': '{:.1f} 분 (평균)',
+            'Taxi_Out_2Sig': '{:.1f} 분 (경고선)',
+            'Taxi_Out_3Sig': '🚨 {:.1f} 분 (마비선)',
+            'Avg_Taxi_In': '{:.1f} 분 (평균)',
+            'Taxi_In_2Sig': '{:.1f} 분 (경고선)',
+            'Taxi_In_3Sig': '🚨 {:.1f} 분 (마비선)'
+        }).background_gradient(
+            subset=['Taxi_Out_3Sig', 'Taxi_In_3Sig'], 
+            cmap='Reds' # 3시그마 컬럼에 붉은색 하이라이트
+        ),
+        use_container_width=True
+    )    
     st.dataframe(
         snow_summary.style.format({
             'Flight_Count': '{:,.0f} 편',
