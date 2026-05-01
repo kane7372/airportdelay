@@ -261,12 +261,11 @@ with tab2:
 with tab3:
     st.header("⏰ 시간대별 병목 현상 및 기상 연동 분석")
     min_date, max_date = flights['Date_Only'].min(), flights['Date_Only'].max()
-    # 달력 위젯 (여기서 선택한 기간이 아래 모든 차트와 '표'에 연동됨)
+    # 달력 위젯
     sel_date_range = st.date_input("분석 기간 선택", [min_date, max_date], min_value=min_date, max_value=max_date)
     
     if len(sel_date_range) == 2:
         start_d, end_d = sel_date_range
-        # 선택된 기간으로 데이터 필터링
         f_hour = flights[(flights['Date_Only'] >= start_d) & (flights['Date_Only'] <= end_d)]
         
         if not f_hour.empty:
@@ -295,35 +294,46 @@ with tab3:
             st.plotly_chart(px.area(h_stats, x='Hour', y='Taxi_Ratio', color='STS_Detail', title="시간대 지연시간 중 지상이동 비중 (%)"), use_container_width=True)
             
             # =========================================================
-            # 🌟 [신규 추가] 달력 연동: 일별 & 강설 영향권별 상세 표
+            # 1. 시간대별 스케줄 집중도 표 (피벗 테이블) -> Expander 적용
             # =========================================================
-            st.divider()
-            st.subheader("📅 선택 기간 내 일별 & 강설 영향권별 지상이동시간 상세 표")
-            st.markdown("달력에서 선택한 기간 동안의 하루하루를 **'눈 내린 상황'**에 따라 쪼개어 보여줍니다. (시간이 오래 걸릴수록 붉은색으로 표시됩니다.)")
+            with st.expander("⏰ 시간대별 스케줄 집중도 및 운항 상태 표 보기 (클릭하여 펼치기)"):
+                st.markdown("선택하신 기간 동안 하루 24시간 중 **어느 시간대(Hour)에 항공편이 가장 많이 몰리는지(Peak Hour)**를 나타냅니다.")
+                
+                pivot_h = h_stats.pivot(index='Hour', columns='STS_Detail', values='Flight_Count').fillna(0).astype(int)
+                pivot_h['총 운항편수'] = pivot_h.sum(axis=1)
+                pivot_h.index = pivot_h.index.astype(str).str.zfill(2) + "시"
+                
+                st.dataframe(
+                    pivot_h.style.background_gradient(subset=['총 운항편수'], cmap='Blues'),
+                    use_container_width=True
+                )
             
-            daily_snow_tab3 = f_hour.groupby(['Date_Only', 'Snow_Status']).agg(
-                Flight_Count=('FLT', 'count'),
-                Avg_Taxi_Out=('Taxi_Out', 'mean'),
-                Avg_Taxi_In=('Taxi_In', 'mean')
-            ).reset_index()
-            
-            # 날짜순, 그리고 강설 심각도 순으로 정렬
-            daily_snow_tab3 = daily_snow_tab3.sort_values(by=['Date_Only', 'Snow_Status'])
-            
-            # 표 렌더링 (컬러 그라데이션 적용)
-            st.dataframe(
-                daily_snow_tab3.style.format({
-                    'Flight_Count': '{:,.0f} 편',
-                    'Avg_Taxi_Out': '{:.1f} 분',
-                    'Avg_Taxi_In': '{:.1f} 분'
-                }).background_gradient(
-                    subset=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
-                    cmap='OrRd' # 주황-빨강 히트맵 색상
-                ),
-                use_container_width=True
-            )
-            st.divider()
             # =========================================================
+            # 2. 일별 & 강설 영향권별 상세 표 -> Expander 적용
+            # =========================================================
+            with st.expander("📅 선택 기간 내 일별 & 강설 영향권별 지상이동시간 상세 표 보기 (클릭하여 펼치기)"):
+                st.markdown("달력에서 선택한 기간 동안의 하루하루를 **'눈 내린 상황'**에 따라 쪼개어 보여줍니다. (시간이 오래 걸릴수록 붉은색으로 표시됩니다.)")
+                
+                daily_snow_tab3 = f_hour.groupby(['Date_Only', 'Snow_Status']).agg(
+                    Flight_Count=('FLT', 'count'),
+                    Avg_Taxi_Out=('Taxi_Out', 'mean'),
+                    Avg_Taxi_In=('Taxi_In', 'mean')
+                ).reset_index()
+                
+                daily_snow_tab3 = daily_snow_tab3.sort_values(by=['Date_Only', 'Snow_Status'])
+                
+                st.dataframe(
+                    daily_snow_tab3.style.format({
+                        'Flight_Count': '{:,.0f} 편',
+                        'Avg_Taxi_Out': '{:.1f} 분',
+                        'Avg_Taxi_In': '{:.1f} 분'
+                    }).background_gradient(
+                        subset=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
+                        cmap='OrRd' 
+                    ),
+                    use_container_width=True
+                )
+            st.divider()
 
             selected_weather = st.multiselect("🌤️ 기상 지표 선택", options=["기온 (°C)", "이슬점 온도 (°C)", "시정 (m)", "풍속 (KT)", "강수량 (mm)"], default=["기온 (°C)", "시정 (m)"])
             w_map = {"기온 (°C)": "Avg_Temp", "이슬점 온도 (°C)": "Avg_Dew", "시정 (m)": "Avg_Vis", "풍속 (KT)": "Avg_Wind", "강수량 (mm)": "Avg_Precip"}
