@@ -186,7 +186,7 @@ with tab1:
         with tc1:
             st.markdown("**✈️ 월별 출/도착 편수**")
             # 피벗 테이블 생성 (월 vs 출/도착)
-            pivot_arr_dep = flights.groupby(['YM', 'Flights_Count']).size().unstack(fill_value=0)
+            pivot_arr_dep = flights.groupby(['YM', 'Flight_Count']).size().unstack(fill_value=0)
             if not pivot_arr_dep.empty:
                 pivot_arr_dep['총합'] = pivot_arr_dep.sum(axis=1)
                 # 인덱스(월)에 '월' 글자 붙이기
