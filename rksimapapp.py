@@ -192,7 +192,7 @@ with tab1:
         with tc1:
             st.markdown("**✈️ 월별 출/도착 편수**")
             # 🌟 수정됨: 'Flight_Count' 대신 'ARR_DEP' (출발/도착 컬럼) 사용!
-            pivot_arr_dep = flights.groupby(['YM', 'ARR_DEP']).size().unstack(fill_value=0)
+            pivot_arr_dep = flights.groupby(['YM', 'STS_Detail']).size().unstack(fill_value=0)
                 
             if not pivot_arr_dep.empty:
                 pivot_arr_dep['총합'] = pivot_arr_dep.sum(axis=1)
