@@ -183,20 +183,21 @@ with tab1:
         # 표를 좌우로 예쁘게 배치하기 위해 컬럼 분할
         tc1, tc2 = st.columns(2)
             
-        with tc1:
-            st.markdown("**✈️ 월별 출/도착 편수**")
-            # 피벗 테이블 생성 (월 vs 출/도착)
-            pivot_arr_dep = flights.groupby(['YM', 'Flight_Count']).size().unstack(fill_value=0)
-            if not pivot_arr_dep.empty:
-                pivot_arr_dep['총합'] = pivot_arr_dep.sum(axis=1)
-                # 인덱스(월)에 '월' 글자 붙이기
-                pivot_arr_dep.index = pivot_arr_dep.index.astype(str) + "월"
-                # 파란색 히트맵 적용하여 출력
-                st.dataframe(
-                    pivot_arr_dep.style.background_gradient(cmap='Blues'),
-                    use_container_width=True
-                )
-            
+    with tc1:
+                st.markdown("**✈️ 월별 출/도착 편수**")
+                # 🌟 수정됨: 'Flight_Count' 대신 'ARR_DEP' (출발/도착 컬럼) 사용!
+                pivot_arr_dep = flights.groupby(['YM', 'ARR_DEP']).size().unstack(fill_value=0)
+                
+                if not pivot_arr_dep.empty:
+                    pivot_arr_dep['총합'] = pivot_arr_dep.sum(axis=1)
+                    # 인덱스(YM)를 문자열로 변환 (필요시 '월' 글자 추가)
+                    pivot_arr_dep.index = pivot_arr_dep.index.astype(str)
+                    
+                    # 파란색 히트맵 적용하여 출력
+                    st.dataframe(
+                        pivot_arr_dep.style.background_gradient(cmap='Blues'),
+                        use_container_width=True
+                    )            
             with tc2:
                 st.markdown("**🚨 월별 운항 상태 (지연/결항 등) 건수**")
                 # 피벗 테이블 생성 (월 vs 운항상태)
