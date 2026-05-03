@@ -173,29 +173,29 @@ with tab1:
     c1, c2 = st.columns(2)
     with c1: st.plotly_chart(px.bar(monthly_stats, x='YM', y='Flight_Count', color='STS_Detail', barmode='stack', title="월별 출/도착 편수"), use_container_width=True)
     with c2: st.plotly_chart(px.line(monthly_stats, x='YM', y='Delay_Count', color='STS_Detail', markers=True, title="월별 지연/결항 건수"), use_container_width=True)        
-        # =========================================================
-        # 🌟 [신규 추가] 월별 트렌드 상세 데이터 표 (Expander)
-        # =========================================================
-        st.divider()
-        with st.expander("📊 월별 출/도착 및 운항 상태 상세 데이터 표 보기 (클릭하여 펼치기)"):
-            st.markdown("위 그래프의 기반이 되는 월별 상세 수치입니다. 숫자가 클수록 진한 색으로 표시됩니다.")
+    # =========================================================
+    # 🌟 [신규 추가] 월별 트렌드 상세 데이터 표 (Expander)
+    # =========================================================
+    st.divider()
+    with st.expander("📊 월별 출/도착 및 운항 상태 상세 데이터 표 보기 (클릭하여 펼치기)"):
+        st.markdown("위 그래프의 기반이 되는 월별 상세 수치입니다. 숫자가 클수록 진한 색으로 표시됩니다.")
             
-            # 표를 좌우로 예쁘게 배치하기 위해 컬럼 분할
-            tc1, tc2 = st.columns(2)
+        # 표를 좌우로 예쁘게 배치하기 위해 컬럼 분할
+        tc1, tc2 = st.columns(2)
             
-            with tc1:
-                st.markdown("**✈️ 월별 출/도착 편수**")
-                # 피벗 테이블 생성 (월 vs 출/도착)
-                pivot_arr_dep = flights.groupby(['Month', 'ARR_DEP']).size().unstack(fill_value=0)
-                if not pivot_arr_dep.empty:
-                    pivot_arr_dep['총합'] = pivot_arr_dep.sum(axis=1)
-                    # 인덱스(월)에 '월' 글자 붙이기
-                    pivot_arr_dep.index = pivot_arr_dep.index.astype(str) + "월"
-                    # 파란색 히트맵 적용하여 출력
-                    st.dataframe(
-                        pivot_arr_dep.style.background_gradient(cmap='Blues'),
-                        use_container_width=True
-                    )
+        with tc1:
+            st.markdown("**✈️ 월별 출/도착 편수**")
+            # 피벗 테이블 생성 (월 vs 출/도착)
+            pivot_arr_dep = flights.groupby(['Month', 'ARR_DEP']).size().unstack(fill_value=0)
+            if not pivot_arr_dep.empty:
+                pivot_arr_dep['총합'] = pivot_arr_dep.sum(axis=1)
+                # 인덱스(월)에 '월' 글자 붙이기
+                pivot_arr_dep.index = pivot_arr_dep.index.astype(str) + "월"
+                # 파란색 히트맵 적용하여 출력
+                st.dataframe(
+                    pivot_arr_dep.style.background_gradient(cmap='Blues'),
+                    use_container_width=True
+                )
             
             with tc2:
                 st.markdown("**🚨 월별 운항 상태 (지연/결항 등) 건수**")
