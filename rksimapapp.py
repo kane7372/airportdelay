@@ -168,11 +168,17 @@ with tab1:
         Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Taxi_In=('Taxi_In', 'mean'),
         Sum_Delay=('Delayed_Total_Time', 'sum'), Sum_Taxi_Delay=('Delayed_Taxi_Time', 'sum')
     ).reset_index()
+    
+    # 지상이동 비율 계산 및 100% 캡 씌우기
     monthly_stats['Taxi_Ratio'] = np.where(monthly_stats['Sum_Delay'] > 0, (monthly_stats['Sum_Taxi_Delay'] / monthly_stats['Sum_Delay']) * 100, 0)
+    monthly_stats['Taxi_Ratio'] = np.clip(monthly_stats['Taxi_Ratio'], 0, 100)
     
     c1, c2 = st.columns(2)
-    with c1: st.plotly_chart(px.bar(monthly_stats, x='YM', y='Flight_Count', color='STS_Detail', barmode='stack', title="월별 출/도착 편수"), use_container_width=True)
-    with c2: st.plotly_chart(px.line(monthly_stats, x='YM', y='Delay_Count', color='STS_Detail', markers=True, title="월별 지연/결항 건수"), use_container_width=True)        
+    with c1: 
+        st.plotly_chart(px.bar(monthly_stats, x='YM', y='Flight_Count', color='STS_Detail', barmode='stack', title="월별 출/도착 편수"), use_container_width=True)
+    with c2: 
+        st.plotly_chart(px.line(monthly_stats, x='YM', y='Delay_Count', color='STS_Detail', markers=True, title="월별 지연/결항 건수"), use_container_width=True)        
+    
     # =========================================================
     # 🌟 [신규 추가] 월별 트렌드 상세 데이터 표 (Expander)
     # =========================================================
@@ -180,51 +186,39 @@ with tab1:
     with st.expander("📊 월별 출/도착 및 운항 상태 상세 데이터 표 보기 (클릭하여 펼치기)"):
         st.markdown("위 그래프의 기반이 되는 월별 상세 수치입니다. 숫자가 클수록 진한 색으로 표시됩니다.")
             
-tc1, tc2 = st.columns(2)
-
-with tc1:
-    st.markdown("**✈️ 월별 출/도착 편수**")
-    
-    # 🌟 수정됨: 'Flight_Count' 대신 'ARR_DEP' (출발/도착 컬럼) 사용!
-    pivot_arr_dep = flights.groupby(['YM', 'ARR_DEP']).size().unstack(fill_value=0)
-    
-    if not pivot_arr_dep.empty:
-        pivot_arr_dep['총합'] = pivot_arr_dep.sum(axis=1)
+        # 표를 좌우로 예쁘게 배치하기 위해 컬럼 분할 (Expander 안쪽에 위치해야 함!)
+        tc1, tc2 = st.columns(2)
         
-        # 인덱스(YM)를 문자열로 변환
-        pivot_arr_dep.index = pivot_arr_dep.index.astype(str)
-        
-        # 파란색 히트맵 적용하여 출력
-        st.dataframe(
-            pivot_arr_dep.style.background_gradient(cmap='Blues'),
-            use_container_width=True
-        )
-
-with tc2:
-    st.markdown("**🚨 월별 운항 상태 (지연/결항 등) 건수**")
-    
-    # 피벗 테이블 생성 (월 vs 운항상태)
-    pivot_sts = flights.groupby(['YM', 'STS_Detail']).size().unstack(fill_value=0)
-    
-    if not pivot_sts.empty:
-        pivot_sts['총합'] = pivot_sts.sum(axis=1)
-        pivot_sts.index = pivot_sts.index.astype(str) + "월"
-        
-        # 붉은색 히트맵 적용하여 출력
-        st.dataframe(
-            pivot_sts.style.background_gradient(cmap='OrRd'),
-            use_container_width=True
-        )
-    
-    c3, c4 = st.columns(2)
-    with c3: st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Delay_Time', color='STS_Detail', barmode='group', title="지연 항공편 월평균 지연 시간(분)"), use_container_width=True)
-    with c4:
-        melt_t = monthly_stats.melt(id_vars=['YM', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
-        if not melt_t.empty: st.plotly_chart(px.line(melt_t, x='YM', y='Time', color='STS_Detail', line_dash='Taxi_Type', markers=True, title="월평균 지상이동시간"), use_container_width=True)
-
-    st.subheader("💡 전체 지연시간 중 지상이동(Taxi)이 차지하는 비중")
-    st.plotly_chart(px.line(monthly_stats, x='YM', y='Taxi_Ratio', color='STS_Detail', markers=True, title="월별 지연시간 대비 지상이동시간 비중 (%)"), use_container_width=True)
-
+        with tc1:
+            st.markdown("**✈️ 월별 출/도착 편수**")
+            # 🌟 수정됨: 'Flight_Count' 대신 'ARR_DEP' (출발/도착 컬럼) 사용!
+            pivot_arr_dep = flights.groupby(['YM', 'ARR_DEP']).size().unstack(fill_value=0)
+                
+            if not pivot_arr_dep.empty:
+                pivot_arr_dep['총합'] = pivot_arr_dep.sum(axis=1)
+                # 인덱스(YM)를 문자열로 변환
+                pivot_arr_dep.index = pivot_arr_dep.index.astype(str)
+                    
+                # 파란색 히트맵 적용하여 출력
+                st.dataframe(
+                    pivot_arr_dep.style.background_gradient(cmap='Blues'),
+                    use_container_width=True
+                )            
+                
+        with tc2:
+            st.markdown("**🚨 월별 운항 상태 (지연/결항 등) 건수**")
+            # 피벗 테이블 생성 (월 vs 운항상태)
+            pivot_sts = flights.groupby(['YM', 'STS_Detail']).size().unstack(fill_value=0)
+            
+            if not pivot_sts.empty:
+                pivot_sts['총합'] = pivot_sts.sum(axis=1)
+                pivot_sts.index = pivot_sts.index.astype(str) + "월"
+                
+                # 붉은색 히트맵 적용하여 출력
+                st.dataframe(
+                    pivot_sts.style.background_gradient(cmap='OrRd'),
+                    use_container_width=True
+                )
 # ------------------------------------------
 # [TAB 2] 일별 통계
 # ------------------------------------------
