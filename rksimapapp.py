@@ -137,6 +137,7 @@ if flights.empty:
     st.stop()
 
 # 🌟 [신규 추가] 전체 데이터 건수 및 필터링된 데이터 건수 표시
+total_count = len(df) # 처음에 불러온 원본 데이터프레임 이름
 filtered_count = len(flights) # 필터가 다 적용된 최종 데이터프레임 이름
 
 st.info(f"📊 **현재 설정된 필터 기준 데이터:** 총 **{filtered_count:,}** 건 (전체 {total_count:,} 건)")
