@@ -206,9 +206,16 @@ with tab1:
                 )            
                 
         with tc2:
-            st.markdown("**🚨 월별 운항 상태 (지연/결항 등) 건수**")
-            # 피벗 테이블 생성 (월 vs 운항상태)
-            pivot_sts = flights.groupby(['YM', 'STS_Detail']).size().unstack(fill_value=0)
+            st.markdown("**🚨 월별 운항 상태 (15분 이상 지연/결항 등) 건수**")
+            
+            # 🌟 핵심 수정: 지연(Is_Delayed)이거나, 상태에 '결항' 또는 'cnl'이 포함된 경우 모두 필터링!
+            bad_flights = flights[
+                (flights['Is_Delayed'] == True) | 
+                (flights['STS_Detail'].str.contains('결항|cnl', case=False, na=False))
+            ]
+            
+            # 필터링된 데이터로 피벗 테이블 생성
+            pivot_sts = bad_flights.groupby(['YM', 'STS_Detail']).size().unstack(fill_value=0)
             
             if not pivot_sts.empty:
                 pivot_sts['총합'] = pivot_sts.sum(axis=1)
@@ -218,8 +225,7 @@ with tab1:
                 st.dataframe(
                     pivot_sts.style.background_gradient(cmap='OrRd'),
                     use_container_width=True
-                )
-    c3, c4 = st.columns(2)
+                )    c3, c4 = st.columns(2)
     with c3: st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Delay_Time', color='STS_Detail', barmode='group', title="지연 항공편 월평균 지연 시간(분)"), use_container_width=True)
     with c4:
         melt_t = monthly_stats.melt(id_vars=['YM', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
