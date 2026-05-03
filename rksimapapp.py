@@ -177,7 +177,14 @@ with tab1:
     with c1: 
         st.plotly_chart(px.bar(monthly_stats, x='YM', y='Flight_Count', color='STS_Detail', barmode='stack', title="월별 출/도착 편수"), use_container_width=True)
     with c2: 
-        st.plotly_chart(px.line(monthly_stats, x='YM', y='Delay_Count', color='STS_Detail', markers=True, title="월별 지연/결항 건수"), use_container_width=True)        
+        bad_stats = monthly_stats[
+            (monthly_stats['Delay_Count'] > 0) | 
+            (monthly_stats['STS_Detail'].str.contains('결항|cnl', case=False, na=False))
+        ]
+        
+        # ⚠️ 중요: y축을 Delay_Count가 아닌 'Flight_Count'로 둬야 결항된 비행기 숫자도 올바르게 카운트되어 그래프가 솟아오릅니다!
+        fig_c2 = px.line(bad_stats, x='YM', y='Flight_Count', color='STS_Detail', markers=True, title="월별 지연/결항 건수")
+        st.plotly_chart(fig_c2, use_container_width=True)        
     
     # =========================================================
     # 🌟 [신규 추가] 월별 트렌드 상세 데이터 표 (Expander)
@@ -225,7 +232,8 @@ with tab1:
                 st.dataframe(
                     pivot_sts.style.background_gradient(cmap='OrRd'),
                     use_container_width=True
-                )    c3, c4 = st.columns(2)
+                )    
+    c3, c4 = st.columns(2)
     with c3: st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Delay_Time', color='STS_Detail', barmode='group', title="지연 항공편 월평균 지연 시간(분)"), use_container_width=True)
     with c4:
         melt_t = monthly_stats.melt(id_vars=['YM', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
