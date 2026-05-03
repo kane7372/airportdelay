@@ -183,7 +183,7 @@ with tab1:
         # 표를 좌우로 예쁘게 배치하기 위해 컬럼 분할
         tc1, tc2 = st.columns(2)
             
-    with tc1:
+            with tc1:
                 st.markdown("**✈️ 월별 출/도착 편수**")
                 # 🌟 수정됨: 'Flight_Count' 대신 'ARR_DEP' (출발/도착 컬럼) 사용!
                 pivot_arr_dep = flights.groupby(['YM', 'ARR_DEP']).size().unstack(fill_value=0)
