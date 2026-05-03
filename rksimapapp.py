@@ -219,6 +219,14 @@ with tab1:
                     pivot_sts.style.background_gradient(cmap='OrRd'),
                     use_container_width=True
                 )
+    c3, c4 = st.columns(2)
+    with c3: st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Delay_Time', color='STS_Detail', barmode='group', title="지연 항공편 월평균 지연 시간(분)"), use_container_width=True)
+    with c4:
+        melt_t = monthly_stats.melt(id_vars=['YM', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
+        if not melt_t.empty: st.plotly_chart(px.line(melt_t, x='YM', y='Time', color='STS_Detail', line_dash='Taxi_Type', markers=True, title="월평균 지상이동시간"), use_container_width=True)
+
+    st.subheader("💡 전체 지연시간 중 지상이동(Taxi)이 차지하는 비중")
+    st.plotly_chart(px.line(monthly_stats, x='YM', y='Taxi_Ratio', color='STS_Detail', markers=True, title="월별 지연시간 대비 지상이동시간 비중 (%)"), use_container_width=True)
 # ------------------------------------------
 # [TAB 2] 일별 통계
 # ------------------------------------------
