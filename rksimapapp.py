@@ -28,8 +28,10 @@ def load_data():
             df = pd.read_csv(file_path, parse_dates=['STD_Full', 'RAM_Full'])
             
         if 'Date_Only' in df.columns:
-            df['Date_Only'] = pd.to_datetime(df['Date_Only']).dt.date
-            
+            # 1. errors='coerce'를 넣어서 '날짜미상' 같은 이상한 글자는 에러를 뿜지 않고 일단 빈칸(NaT)으로 만듭니다.
+            df['Date_Only'] = pd.to_datetime(df['Date_Only'], errors='coerce').dt.date
+            # 2. 빈칸이 된 곳에 다시 '날짜미상'이라는 꼬리표를 예쁘게 달아줍니다.
+            df['Date_Only'] = df['Date_Only'].fillna('날짜미상')            
         df['Delayed_Total_Time'] = np.where(df['Is_Delayed'] & (df['Total_Delay'] > 0), df['Total_Delay'], 0)
         df['Delayed_Taxi_Time'] = np.where(df['Is_Delayed'] & (df['Total_Delay'] > 0), df['Taxi_Time'], 0)
         
