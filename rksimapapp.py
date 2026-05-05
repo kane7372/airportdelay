@@ -127,6 +127,14 @@ flights = flights_raw[
 if exclude_outliers and 'Is_Taxi_Outlier' in flights.columns:
     flights = flights[flights['Is_Taxi_Outlier'] == False]
 
+if 'YM' in flights.columns:
+    flights['YM'] = flights['YM'].fillna('날짜미상')
+
+is_cnl = flights['STS_Detail'].str.contains('결항|cnl', case=False, na=False)
+flights.loc[is_cnl, 'Total_Delay'] = flights.loc[is_cnl, 'Total_Delay'].fillna(0)
+flights.loc[is_cnl, 'Taxi_Out'] = flights.loc[is_cnl, 'Taxi_Out'].fillna(0)
+flights.loc[is_cnl, 'Taxi_In'] = flights.loc[is_cnl, 'Taxi_In'].fillna(0)
+
 # ==========================================
 # 2. UI Layout & Tabs
 # ==========================================
@@ -162,7 +170,8 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # ------------------------------------------
 with tab1:
     st.header("📅 월별 운항 및 지연 트렌드")
-    monthly_stats = flights.groupby(['YM', 'STS_Detail']).agg(
+# 🌟 groupby에 dropna=False 를 추가하여 YM이 비어있더라도 결항 데이터가 살아남게 합니다!
+    monthly_stats = flights.groupby(['YM', 'STS_Detail'], dropna=False).agg(
         Flight_Count=('FLT', 'count'), Delay_Count=('Is_Delayed', 'sum'),
         Avg_Delay_Time=('Total_Delay', lambda x: x[x > 15].mean() if len(x[x > 15]) > 0 else 0),
         Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Taxi_In=('Taxi_In', 'mean'),
