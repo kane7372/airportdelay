@@ -245,7 +245,9 @@ with tab1:
                     use_container_width=True
                 )    
     c3, c4, c5 = st.columns(3)
-    with c3: st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Total_Delay', color='STS_Detail', barmode='group', title="전체 항공편 단순 평균 지연 시간(분)"), use_container_width=True)
+    with c3: 
+        c5_stats = monthly_stats[~monthly_stats['STS_Detail'].str.contains('CNL|DLA', na=False)]
+        st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Total_Delay', color='STS_Detail', barmode='group', title="전체 항공편 단순 평균 지연 시간(분)"), use_container_width=True)
     with c4 : st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Delay_Time', color='STS_Detail', barmode='group', title="15분 이상 지연 항공편 월평균 지연 시간(분)"), use_container_width=True)
     with c5 :
         melt_t = monthly_stats.melt(id_vars=['YM', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
