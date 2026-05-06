@@ -175,11 +175,11 @@ with tab1:
 # 🌟 groupby에 dropna=False 를 추가하여 YM이 비어있더라도 결항 데이터가 살아남게 합니다!
     monthly_stats = flights.groupby(['YM', 'STS_Detail'], dropna=False).agg(
         Flight_Count=('FLT', 'count'), Delay_Count=('Is_Delayed', 'sum'),
-        Avg_Delay_Time=('Total_Delay', lambda x: x[x > 15].mean() if len(x[x > 15]) > 0 else 0),
+        Avg_Delay_Time=('Total_Delay', lambda x: x[x > 15].mean() if len(x[x > 15]) > 0 else 0), # 기존 (15분 이상 지연 평균)
+        Avg_Total_Delay=('Total_Delay', 'mean'), # 🌟 신규 추가 (전체 비행기 단순 평균)
         Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Taxi_In=('Taxi_In', 'mean'),
         Sum_Delay=('Delayed_Total_Time', 'sum'), Sum_Taxi_Delay=('Delayed_Taxi_Time', 'sum')
-    ).reset_index()
-    
+    ).reset_index()    
     # 지상이동 비율 계산 및 100% 캡 씌우기
     monthly_stats['Taxi_Ratio'] = np.where(monthly_stats['Sum_Delay'] > 0, (monthly_stats['Sum_Taxi_Delay'] / monthly_stats['Sum_Delay']) * 100, 0)
     monthly_stats['Taxi_Ratio'] = np.clip(monthly_stats['Taxi_Ratio'], 0, 100)
@@ -244,9 +244,10 @@ with tab1:
                     pivot_sts.style.background_gradient(cmap='OrRd'),
                     use_container_width=True
                 )    
-    c3, c4 = st.columns(2)
-    with c3: st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Delay_Time', color='STS_Detail', barmode='group', title="지연 항공편 월평균 지연 시간(분)"), use_container_width=True)
-    with c4:
+    c3, c4, c5 = st.columns(3)
+    with c3: st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Total_Delay', color='STS_Detail', barmode='group', title="전체 항공편 단순 평균 지연 시간(분)"), use_container_width=True)
+    with c4 : st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Delay_Time', color='STS_Detail', barmode='group', title="15분 이상 지연 항공편 월평균 지연 시간(분)"), use_container_width=True)
+    with c5 :
         melt_t = monthly_stats.melt(id_vars=['YM', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
         if not melt_t.empty: st.plotly_chart(px.line(melt_t, x='YM', y='Time', color='STS_Detail', line_dash='Taxi_Type', markers=True, title="월평균 지상이동시간"), use_container_width=True)
 
