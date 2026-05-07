@@ -517,6 +517,7 @@ with tab4:
     f_day = flights[pd.to_datetime(flights['Date_Only']).dt.date == sel_date].copy()
     
     map_flights = f_day[f_day[t_col].dt.hour == sel_hour].copy()
+    map_flights = map_flights.dropna(subset=['Lat', 'Lon'])
 
     # =================================================================
     # 🌟 [수정] 지도를 접었다 펼 수 있도록 Expander 적용!
@@ -545,6 +546,7 @@ with tab4:
             zone_file = 'rksi_stands_zoned (2).csv' if os.path.exists('rksi_stands_zoned (2).csv') else 'rksi_stands_zoned.csv'
             df_pads = pd.read_csv(zone_file)
             deice_pads = df_pads[df_pads['Category'].astype(str).str.contains('De-icing', case=False, na=False)]
+            deice_pads = deice_pads.dropna(subset=['Lat', 'Lon'])
             for _, pad in deice_pads.iterrows():
                 folium.CircleMarker(
                     location=[pad['Lat'], pad['Lon']], radius=5, color='#1E90FF', fill=True,
