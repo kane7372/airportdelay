@@ -516,51 +516,54 @@ with tab4:
     # [데이터 준비] 선택한 '날짜' 전체 데이터 (기상/통계용)
     f_day = flights[flights['Date_Only'] == str(sel_date)].copy()
     
-    # [데이터 준비] 선택한 '시간' 데이터 (지도 마커용)
     map_flights = f_day[f_day[t_col].dt.hour == sel_hour].copy()
 
-    # 상단 지표 (Metrics)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("해당 시간 편수", f"{len(map_flights)}편")
-    if not map_flights.empty:
-        # 해당 시간 첫 번째 데이터의 기상 정보 표시
-        c2.metric("기온 / 이슬점", f"{map_flights['Temp'].iloc[0]}°C / {map_flights['Dew_Point'].iloc[0]}°C")
-        c3.metric("풍속 / 풍향", f"{map_flights['Wind_Spd'].iloc[0]}KT / {map_flights['Wind_Dir'].iloc[0]}°")
-        c4.metric("기상 (WMO)", map_flights['Weather_Desc'].iloc[0])
+    # =================================================================
+    # 🌟 [수정] 지도를 접었다 펼 수 있도록 Expander 적용!
+    # expanded=True 로 설정해두면 처음 탭에 들어왔을 때는 지도가 펼쳐져 있습니다.
+    # =================================================================
+    with st.expander("🗺️ 선택 시간대 공항 상세 지도 보기 (클릭하여 접기/펼치기)", expanded=True):
+        
+        # 상단 지표 (Metrics)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("해당 시간 편수", f"{len(map_flights)}편")
+        if not map_flights.empty:
+            c2.metric("기온 / 이슬점", f"{map_flights['Temp'].iloc[0]}°C / {map_flights['Dew_Point'].iloc[0]}°C")
+            c3.metric("풍속 / 풍향", f"{map_flights['Wind_Spd'].iloc[0]}KT / {map_flights['Wind_Dir'].iloc[0]}°")
+            c4.metric("기상 (WMO)", map_flights['Weather_Desc'].iloc[0])
 
-    # --- 지도 시각화 영역 ---
-    m = folium.Map(location=[37.46, 126.44], zoom_start=14)
-    
-    # 활주로 마커
-    runways = {'33L': (37.4541, 126.4608), '15R': (37.4816, 126.4363), '34R': (37.4433, 126.4416), '16L': (37.4700, 126.4170)}
-    for r, c in runways.items(): 
-        folium.Marker(c, tooltip=f"Runway {r}", icon=folium.Icon(color='lightgray', icon='road', prefix='fa')).add_to(m)
+        # --- 지도 시각화 영역 ---
+        m = folium.Map(location=[37.46, 126.44], zoom_start=14)
+        
+        # 활주로 마커
+        runways = {'33L': (37.4541, 126.4608), '15R': (37.4816, 126.4363), '34R': (37.4433, 126.4416), '16L': (37.4700, 126.4170)}
+        for r, c in runways.items(): 
+            folium.Marker(c, tooltip=f"Runway {r}", icon=folium.Icon(color='lightgray', icon='road', prefix='fa')).add_to(m)
 
-    # 제방빙장 마커
-    try:
-        zone_file = 'rksi_stands_zoned (2).csv' if os.path.exists('rksi_stands_zoned (2).csv') else 'rksi_stands_zoned.csv'
-        df_pads = pd.read_csv(zone_file)
-        deice_pads = df_pads[df_pads['Category'].astype(str).str.contains('De-icing', case=False, na=False)]
-        for _, pad in deice_pads.iterrows():
-            folium.CircleMarker(
-                location=[pad['Lat'], pad['Lon']], radius=5, color='#1E90FF', fill=True,
-                fill_color='#87CEFA', fill_opacity=0.7, tooltip=f"❄️ 제방빙장 (Stand {pad['Stand_ID']})"
+        # 제방빙장 마커
+        try:
+            zone_file = 'rksi_stands_zoned (2).csv' if os.path.exists('rksi_stands_zoned (2).csv') else 'rksi_stands_zoned.csv'
+            df_pads = pd.read_csv(zone_file)
+            deice_pads = df_pads[df_pads['Category'].astype(str).str.contains('De-icing', case=False, na=False)]
+            for _, pad in deice_pads.iterrows():
+                folium.CircleMarker(
+                    location=[pad['Lat'], pad['Lon']], radius=5, color='#1E90FF', fill=True,
+                    fill_color='#87CEFA', fill_opacity=0.7, tooltip=f"❄️ 제방빙장 (Stand {pad['Stand_ID']})"
+                ).add_to(m)
+        except: pass
+
+        # 항공편 마커
+        c_dict = {'Normal': 'green', 'Ramp (Gate)': 'red', 'Taxi (Ground)': 'orange', 'Cancelled (CNL)': 'black'}
+        for _, row in map_flights.iterrows():
+            is_dep = row['Flight_Dir'] == 'DEP'
+            fa_icon = "plane-departure" if is_dep else "plane-arrival"
+            popup = f"<b>{row['FLT']}</b><br>Delay: {row['Delay_Cause']}<br>Total: {row['Total_Delay']:.0f}m"
+            folium.Marker(
+                [row['Lat'], row['Lon']], popup=popup, tooltip=row['FLT'],
+                icon=folium.Icon(color=c_dict.get(row['Delay_Cause'], 'blue'), icon=fa_icon, prefix='fa')
             ).add_to(m)
-    except: pass
 
-    # 항공편 마커
-    c_dict = {'Normal': 'green', 'Ramp (Gate)': 'red', 'Taxi (Ground)': 'orange', 'Cancelled (CNL)': 'black'}
-    for _, row in map_flights.iterrows():
-        is_dep = row['Flight_Dir'] == 'DEP'
-        fa_icon = "plane-departure" if is_dep else "plane-arrival"
-        popup = f"<b>{row['FLT']}</b><br>Delay: {row['Delay_Cause']}<br>Total: {row['Total_Delay']:.0f}m"
-        folium.Marker(
-            [row['Lat'], row['Lon']], popup=popup, tooltip=row['FLT'],
-            icon=folium.Icon(color=c_dict.get(row['Delay_Cause'], 'blue'), icon=fa_icon, prefix='fa')
-        ).add_to(m)
-
-    st_folium(m, width="100%", height=600)
-
+        st_folium(m, width="100%", height=600)
     # =================================================================
     # 🌟 [추가] 기상 분석 로직 (선택한 날짜 sel_date 연동)
     # =================================================================
