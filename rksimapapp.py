@@ -587,89 +587,71 @@ with tab4:
         severe_w = [w for w in w_list if w != '일반']
         return ', '.join(severe_w) if severe_w else '일반 (맑음)'
 
-    # --- 표 1. 시간대별 집중도 및 기상 ---
-    with st.expander("⏰ 시간대별 스케줄 집중도 및 기상 상태 표"):
-        pivot_h = h_stats.pivot(index='Hour', columns='STS_Detail', values='Flight_Count').fillna(0).astype(int)
-        pivot_h['총 운항편수'] = pivot_h.sum(axis=1)
-        hourly_weather = f_hour.groupby('Hour').agg(Avg_Temp=('Temp', 'mean'), Weather_Info=('Weather_Desc', get_weather_summary))
-        pivot_h = pivot_h.join(hourly_weather).rename(columns={'Avg_Temp': '평균 기온', 'Weather_Info': '주요 기상 현상'})
-        pivot_h.index = pivot_h.index.astype(int).astype(str).str.zfill(2) + "시"
-        
-        st.dataframe(pivot_h.style.format({'평균 기온': '{:.1f} °C'}).background_gradient(subset=['총 운항편수'], cmap='Blues'), use_container_width=True)
+# =========================================================
+    # 🌟 [통합] 시간대별 운항 상태 & 지상운영 & 기상 통합 분석 표
+    # =========================================================
+    with st.expander("⏰ 시간대별 운항 현황 & 기상 & 지상이동 통합 분석 (클릭하여 펼치기)", expanded=True):
+        st.markdown("선택한 날짜의 시간대별로 **운항 상태(정상/지연/결항), 지상이동시간, 기상 현상**을 한눈에 분석할 수 있는 통합 지표입니다.")
 
-    # --- 표 2. 강설 영향권별 상세 표 (시간대별 세분화 + 🌟필터 기능 추가) ---
-    with st.expander("📅 강설 영향권 및 시간대별 상세 운영 현황 표 (클릭하여 펼치기)", expanded=True):
-        st.markdown("선택한 날짜의 **강설 영향권 단계와 시간대(Hour)**를 결합하여 보여줍니다. 아래 필터를 사용해 원하는 데이터만 골라보세요.")
+        # 1. 데이터 가공 및 병합 로직
+        # A. 상태별(STS_Detail) 항공편 대수 피벗 (DEP_NML, ARR_NML 등)
+        pivot_sts = f_hour.groupby(['Hour', 'Snow_Status', 'STS_Detail']).size().unstack(fill_value=0)
         
-        # 1. 데이터 세분화 및 가공
-        daily_snow_detail = f_hour.groupby(['Date_Only', 'Hour', 'Snow_Status']).agg(
-            Flight_Count=('FLT', 'count'),
+        # B. 지상운영 및 기상 지표 집계
+        metrics_base = f_hour.groupby(['Hour', 'Snow_Status']).agg(
+            총_편수=('FLT', 'count'),
             Avg_Taxi_Out=('Taxi_Out', 'mean'),
             Avg_Taxi_In=('Taxi_In', 'mean'),
             Avg_Temp=('Temp', 'mean'),
             Weather_Info=('Weather_Desc', get_weather_summary)
-        ).reset_index()
+        )
         
-        daily_snow_detail = daily_snow_detail.sort_values(by=['Date_Only', 'Hour', 'Snow_Status'])
-        daily_snow_detail['Hour'] = daily_snow_detail['Hour'].astype(int).astype(str).str.zfill(2) + "시"
+        # C. 두 데이터 결합
+        combined_df = metrics_base.join(pivot_sts).reset_index()
         
-        daily_snow_detail = daily_snow_detail.rename(columns={
+        # 정렬 및 시간대 포맷팅
+        combined_df = combined_df.sort_values(by=['Hour', 'Snow_Status'])
+        combined_df['Hour'] = combined_df['Hour'].astype(int).astype(str).str.zfill(2) + "시"
+        
+        # 컬럼명 깔끔하게 정리
+        combined_df = combined_df.rename(columns={
             'Hour': '시간대',
             'Snow_Status': '강설 영향권',
             'Weather_Info': '주요 기상 현상',
-            'Avg_Temp': '평균 기온'
+            'Avg_Temp': '평균 기온',
+            'Avg_Taxi_Out': 'Taxi-Out(평균)',
+            'Avg_Taxi_In': 'Taxi-In(평균)'
         })
-        
-        # =========================================================
-        # 🌟 [신규 추가] 다중 선택(Multiselect) 필터 UI 구성
-        # =========================================================
-        f_col1, f_col2 = st.columns(2)
-        
-        with f_col1:
-            # 시간대 필터 (기본값은 '전체 선택' 느낌을 위해 비워둠)
-            sel_hours = st.multiselect(
-                "⏰ 시간대 선택 (여러 개 선택 가능)", 
-                options=daily_snow_detail['시간대'].unique(),
-                default=[]
-            )
-            
-        with f_col2:
-            # 강설 영향권 필터
-            sel_snow = st.multiselect(
-                "❄️ 강설 영향권 선택 (여러 개 선택 가능)", 
-                options=daily_snow_detail['강설 영향권'].unique(),
-                default=[]
-            )
-            
-        # 🌟 필터 조건에 따라 데이터 자르기
-        filtered_df = daily_snow_detail.copy()
-        
-        # 사용자가 시간대를 하나라도 골랐다면 해당 시간대만 남김
-        if sel_hours:
-            filtered_df = filtered_df[filtered_df['시간대'].isin(sel_hours)]
-            
-        # 사용자가 강설 영향권을 하나라도 골랐다면 해당 영향권만 남김
-        if sel_snow:
-            filtered_df = filtered_df[filtered_df['강설 영향권'].isin(sel_snow)]
 
-        # =========================================================
-        # 결과 표 출력
-        # =========================================================
-        if filtered_df.empty:
-            st.warning("조건에 맞는 데이터가 없습니다. 필터를 다시 설정해 주세요.")
-        else:
+        # 2. 필터 UI
+        f_col1, f_col2 = st.columns(2)
+        with f_col1:
+            sel_hours = st.multiselect("⏰ 시간대 필터", options=combined_df['시간대'].unique())
+        with f_col2:
+            sel_snow = st.multiselect("❄️ 강설 영향권 필터", options=combined_df['강설 영향권'].unique())
+
+        # 필터 적용
+        filtered_df = combined_df.copy()
+        if sel_hours: filtered_df = filtered_df[filtered_df['시간대'].isin(sel_hours)]
+        if sel_snow: filtered_df = filtered_df[filtered_df['강설 영향권'].isin(sel_snow)]
+
+        # 3. 통합 표 출력 (히트맵 스타일 적용)
+        if not filtered_df.empty:
+            # 동적으로 생성된 상태 컬럼들 추출 (스타일링 대상)
+            status_cols = [c for c in pivot_sts.columns if c in filtered_df.columns]
+            
             st.dataframe(
                 filtered_df.style.format({
-                    'Flight_Count': '{:,.0f} 편',
-                    'Avg_Taxi_Out': '{:.1f} 분',
-                    'Avg_Taxi_In': '{:.1f} 분',
+                    '총 편수': '{:,.0f} 편',
+                    'Taxi-Out(평균)': '{:.1f} 분',
+                    'Taxi-In(평균)': '{:.1f} 분',
                     '평균 기온': '{:.1f} °C'
-                }).background_gradient(
-                    subset=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
-                    cmap='OrRd' 
-                ),
+                }).background_gradient(subset=['총 편수'] + status_cols, cmap='Blues') # 운항 편수는 파란색
+                  .background_gradient(subset=['Taxi-Out(평균)', 'Taxi-In(평균)'], cmap='OrRd'), # 이동 시간은 주황색
                 use_container_width=True
             )
+        else:
+            st.warning("조건에 맞는 데이터가 없습니다.")
     # --- 그래프 1. 강설 여파 회복 곡선 ---
     with st.expander("📉 강설 영향권별 지상운영 회복 곡선 (Recovery Curve)"):
         recovery_stats = f_hour.groupby('Snow_Status').agg(Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Taxi_In=('Taxi_In', 'mean')).reset_index()
