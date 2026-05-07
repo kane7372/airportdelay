@@ -376,200 +376,259 @@ with tab3:
                     fig_h2.update_xaxes(tickmode='linear', dtick=1)
                     st.plotly_chart(fig_h2, use_container_width=True)
             
-            # 🌟 [공통] 기상 현상(Weather_Desc)을 요약하기 위한 커스텀 함수
-            def get_weather_summary(x):
-                w_list = [str(w) for w in x.dropna().unique() if str(w) not in ['-', 'UNK']]
-                if not w_list: return '알 수 없음'
-                severe_w = [w for w in w_list if w != '일반']
-                return ', '.join(severe_w) if severe_w else '일반 (맑음)'
+            # # 🌟 [공통] 기상 현상(Weather_Desc)을 요약하기 위한 커스텀 함수
+            # def get_weather_summary(x):
+            #     w_list = [str(w) for w in x.dropna().unique() if str(w) not in ['-', 'UNK']]
+            #     if not w_list: return '알 수 없음'
+            #     severe_w = [w for w in w_list if w != '일반']
+            #     return ', '.join(severe_w) if severe_w else '일반 (맑음)'
 
-            # =========================================================
-            # 1. 시간대별 스케줄 집중도 표 (피벗 테이블) -> 기상 현상 추가
-            # =========================================================
-            with st.expander("⏰ 시간대별 스케줄 집중도 및 운항 상태 표 보기 (클릭하여 펼치기)"):
-                st.markdown("선택하신 기간 동안 하루 24시간 중 **어느 시간대(Hour)에 항공편이 가장 많이 몰리는지(Peak Hour)**와 해당 시간의 기상을 나타냅니다.")
+            # # =========================================================
+            # # 1. 시간대별 스케줄 집중도 표 (피벗 테이블) -> 기상 현상 추가
+            # # =========================================================
+            # with st.expander("⏰ 시간대별 스케줄 집중도 및 운항 상태 표 보기 (클릭하여 펼치기)"):
+            #     st.markdown("선택하신 기간 동안 하루 24시간 중 **어느 시간대(Hour)에 항공편이 가장 많이 몰리는지(Peak Hour)**와 해당 시간의 기상을 나타냅니다.")
                 
-                # 운항 상태 피벗 테이블 생성
-                pivot_h = h_stats.pivot(index='Hour', columns='STS_Detail', values='Flight_Count').fillna(0).astype(int)
-                pivot_h['총 운항편수'] = pivot_h.sum(axis=1)
+            #     # 운항 상태 피벗 테이블 생성
+            #     pivot_h = h_stats.pivot(index='Hour', columns='STS_Detail', values='Flight_Count').fillna(0).astype(int)
+            #     pivot_h['총 운항편수'] = pivot_h.sum(axis=1)
                 
-                # 시간대별 평균 기온 및 주요 기상 현상 그룹핑
-                hourly_weather = f_hour.groupby('Hour').agg(
-                    Avg_Temp=('Temp', 'mean'),
-                    Weather_Info=('Weather_Desc', get_weather_summary)
-                )
+            #     # 시간대별 평균 기온 및 주요 기상 현상 그룹핑
+            #     hourly_weather = f_hour.groupby('Hour').agg(
+            #         Avg_Temp=('Temp', 'mean'),
+            #         Weather_Info=('Weather_Desc', get_weather_summary)
+            #     )
                 
-                # 피벗 테이블에 기상 정보 병합 및 이름 변경
-                pivot_h = pivot_h.join(hourly_weather)
-                pivot_h = pivot_h.rename(columns={'Avg_Temp': '평균 기온', 'Weather_Info': '주요 기상 현상'})
+            #     # 피벗 테이블에 기상 정보 병합 및 이름 변경
+            #     pivot_h = pivot_h.join(hourly_weather)
+            #     pivot_h = pivot_h.rename(columns={'Avg_Temp': '평균 기온', 'Weather_Info': '주요 기상 현상'})
                 
-                # 인덱스 포맷팅 (00시, 01시...)
-                pivot_h.index = pivot_h.index.astype(str).str.zfill(2) + "시"
+            #     # 인덱스 포맷팅 (00시, 01시...)
+            #     pivot_h.index = pivot_h.index.astype(str).str.zfill(2) + "시"
                 
-                # 표 렌더링 (기온 포맷 및 총 운항편수 파란색 히트맵 적용)
-                st.dataframe(
-                    pivot_h.style.format({'평균 기온': '{:.1f} °C'}).background_gradient(subset=['총 운항편수'], cmap='Blues'),
-                    use_container_width=True
-                )
+            #     # 표 렌더링 (기온 포맷 및 총 운항편수 파란색 히트맵 적용)
+            #     st.dataframe(
+            #         pivot_h.style.format({'평균 기온': '{:.1f} °C'}).background_gradient(subset=['총 운항편수'], cmap='Blues'),
+            #         use_container_width=True
+            #     )
             
-            # =========================================================
-            # 2. 일별 & 강설 영향권별 상세 표 -> Expander 적용
-            # =========================================================
-            with st.expander("📅 선택 기간 내 일별 & 강설 영향권별 지상이동시간 상세 표 보기 (클릭하여 펼치기)"):
-                st.markdown("달력에서 선택한 기간 동안의 하루하루를 **'눈 내린 상황'**에 따라 쪼개어 보여줍니다. (시간이 오래 걸릴수록 붉은색으로 표시됩니다.)")
+            # # =========================================================
+            # # 2. 일별 & 강설 영향권별 상세 표 -> Expander 적용
+            # # =========================================================
+            # with st.expander("📅 선택 기간 내 일별 & 강설 영향권별 지상이동시간 상세 표 보기 (클릭하여 펼치기)"):
+            #     st.markdown("달력에서 선택한 기간 동안의 하루하루를 **'눈 내린 상황'**에 따라 쪼개어 보여줍니다. (시간이 오래 걸릴수록 붉은색으로 표시됩니다.)")
                 
-                daily_snow_tab3 = f_hour.groupby(['Date_Only', 'Snow_Status']).agg(
-                    Flight_Count=('FLT', 'count'),
-                    Avg_Taxi_Out=('Taxi_Out', 'mean'),
-                    Avg_Taxi_In=('Taxi_In', 'mean'),
-                    Avg_Temp=('Temp', 'mean'),
-                    Weather_Info=('Weather_Desc', get_weather_summary)
-                ).reset_index()
+            #     daily_snow_tab3 = f_hour.groupby(['Date_Only', 'Snow_Status']).agg(
+            #         Flight_Count=('FLT', 'count'),
+            #         Avg_Taxi_Out=('Taxi_Out', 'mean'),
+            #         Avg_Taxi_In=('Taxi_In', 'mean'),
+            #         Avg_Temp=('Temp', 'mean'),
+            #         Weather_Info=('Weather_Desc', get_weather_summary)
+            #     ).reset_index()
                 
-                daily_snow_tab3 = daily_snow_tab3.sort_values(by=['Date_Only', 'Snow_Status'])
-                daily_snow_tab3 = daily_snow_tab3.rename(columns={'Weather_Info': '주요 기상 현상', 'Avg_Temp': '평균 기온'})
+            #     daily_snow_tab3 = daily_snow_tab3.sort_values(by=['Date_Only', 'Snow_Status'])
+            #     daily_snow_tab3 = daily_snow_tab3.rename(columns={'Weather_Info': '주요 기상 현상', 'Avg_Temp': '평균 기온'})
                 
-                st.dataframe(
-                    daily_snow_tab3.style.format({
-                        'Flight_Count': '{:,.0f} 편',
-                        'Avg_Taxi_Out': '{:.1f} 분',
-                        'Avg_Taxi_In': '{:.1f} 분',
-                        '평균 기온': '{:.1f} °C'
-                    }).background_gradient(
-                        subset=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
-                        cmap='OrRd' 
-                    ),
-                    use_container_width=True
-                )
-            st.divider()
+            #     st.dataframe(
+            #         daily_snow_tab3.style.format({
+            #             'Flight_Count': '{:,.0f} 편',
+            #             'Avg_Taxi_Out': '{:.1f} 분',
+            #             'Avg_Taxi_In': '{:.1f} 분',
+            #             '평균 기온': '{:.1f} °C'
+            #         }).background_gradient(
+            #             subset=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
+            #             cmap='OrRd' 
+            #         ),
+            #         use_container_width=True
+            #     )
+            # st.divider()
 
-            # =========================================================
-            # 🌟 [신규 추가] 3. 강설 여파 회복 곡선 (Recovery Curve) -> Expander 적용
-            # =========================================================
-            with st.expander("📉 강설 영향권별 지상운영 회복 곡선 보기 (클릭하여 펼치기)"):
-                st.markdown("눈이 내리는 시점(1단계)부터 공항 운영이 정상화(6단계)되기까지, **시간 경과에 따른 지상이동시간의 전체 회복 탄력성(Resilience)**을 시각화합니다.")
+            # # =========================================================
+            # # 🌟 [신규 추가] 3. 강설 여파 회복 곡선 (Recovery Curve) -> Expander 적용
+            # # =========================================================
+            # with st.expander("📉 강설 영향권별 지상운영 회복 곡선 보기 (클릭하여 펼치기)"):
+            #     st.markdown("눈이 내리는 시점(1단계)부터 공항 운영이 정상화(6단계)되기까지, **시간 경과에 따른 지상이동시간의 전체 회복 탄력성(Resilience)**을 시각화합니다.")
 
-                recovery_stats = f_hour.groupby('Snow_Status').agg(
-                    Avg_Taxi_Out=('Taxi_Out', 'mean'),
-                    Avg_Taxi_In=('Taxi_In', 'mean')
-                ).reset_index()
+            #     recovery_stats = f_hour.groupby('Snow_Status').agg(
+            #         Avg_Taxi_Out=('Taxi_Out', 'mean'),
+            #         Avg_Taxi_In=('Taxi_In', 'mean')
+            #     ).reset_index()
 
-                melt_recovery = recovery_stats.melt(
-                    id_vars=['Snow_Status'], 
-                    value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
-                    var_name='Taxi_Type', 
-                    value_name='Time'
-                ).dropna()
+            #     melt_recovery = recovery_stats.melt(
+            #         id_vars=['Snow_Status'], 
+            #         value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
+            #         var_name='Taxi_Type', 
+            #         value_name='Time'
+            #     ).dropna()
 
-                if not melt_recovery.empty:
-                    fig_rec = px.line(
-                        melt_recovery, 
-                        x='Snow_Status', 
-                        y='Time', 
-                        color='Taxi_Type',
-                        markers=True, 
-                        text='Time',
-                        title="강설 영향권 6단계에 따른 평균 지상이동시간 변화 및 회복 추이",
-                        color_discrete_map={'Avg_Taxi_Out': '#EF553B', 'Avg_Taxi_In': '#00CC96'}
-                    )
+            #     if not melt_recovery.empty:
+            #         fig_rec = px.line(
+            #             melt_recovery, 
+            #             x='Snow_Status', 
+            #             y='Time', 
+            #             color='Taxi_Type',
+            #             markers=True, 
+            #             text='Time',
+            #             title="강설 영향권 6단계에 따른 평균 지상이동시간 변화 및 회복 추이",
+            #             color_discrete_map={'Avg_Taxi_Out': '#EF553B', 'Avg_Taxi_In': '#00CC96'}
+            #         )
                     
-                    fig_rec.update_traces(
-                        texttemplate='%{text:.1f}분', 
-                        textposition='top center', 
-                        line=dict(width=4), 
-                        marker=dict(size=12)
-                    )
-                    fig_rec.update_layout(hovermode="x unified")
-                    fig_rec.update_yaxes(title_text="평균 소요 시간 (분)")
-                    fig_rec.update_xaxes(title_text="강설 영향권 (회복 단계)")
+            #         fig_rec.update_traces(
+            #             texttemplate='%{text:.1f}분', 
+            #             textposition='top center', 
+            #             line=dict(width=4), 
+            #             marker=dict(size=12)
+            #         )
+            #         fig_rec.update_layout(hovermode="x unified")
+            #         fig_rec.update_yaxes(title_text="평균 소요 시간 (분)")
+            #         fig_rec.update_xaxes(title_text="강설 영향권 (회복 단계)")
                     
-                    st.plotly_chart(fig_rec, use_container_width=True)
-            st.divider()
+            #         st.plotly_chart(fig_rec, use_container_width=True)
+            # st.divider()
             
-            selected_weather = st.multiselect("🌤️ 기상 지표 선택", options=["기온 (°C)", "이슬점 온도 (°C)", "시정 (m)", "풍속 (KT)", "강수량 (mm)"], default=["기온 (°C)", "시정 (m)"])
-            w_map = {"기온 (°C)": "Avg_Temp", "이슬점 온도 (°C)": "Avg_Dew", "시정 (m)": "Avg_Vis", "풍속 (KT)": "Avg_Wind", "강수량 (mm)": "Avg_Precip"}
-            if selected_weather:
-                fig_w = make_subplots(specs=[[{"secondary_y": True}]])
-                colors = ['#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3']
-                for i, w_name in enumerate(selected_weather):
-                    col = w_map[w_name]
-                    is_sec = w_name in ["시정 (m)", "강수량 (mm)"]
-                    if w_name == "강수량 (mm)": fig_w.add_trace(go.Bar(x=w_hour['Hour'], y=w_hour[col], name=w_name, marker_color=colors[i]), secondary_y=is_sec)
-                    else: fig_w.add_trace(go.Scatter(x=w_hour['Hour'], y=w_hour[col], name=w_name, line=dict(color=colors[i])), secondary_y=is_sec)
-                fig_w.update_layout(title="시간대별 평균 기상 트렌드", hovermode="x unified")
-                fig_w.update_xaxes(tickmode='linear', dtick=1)
-                st.plotly_chart(fig_w, use_container_width=True)
+            # selected_weather = st.multiselect("🌤️ 기상 지표 선택", options=["기온 (°C)", "이슬점 온도 (°C)", "시정 (m)", "풍속 (KT)", "강수량 (mm)"], default=["기온 (°C)", "시정 (m)"])
+            # w_map = {"기온 (°C)": "Avg_Temp", "이슬점 온도 (°C)": "Avg_Dew", "시정 (m)": "Avg_Vis", "풍속 (KT)": "Avg_Wind", "강수량 (mm)": "Avg_Precip"}
+            # if selected_weather:
+            #     fig_w = make_subplots(specs=[[{"secondary_y": True}]])
+            #     colors = ['#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3']
+            #     for i, w_name in enumerate(selected_weather):
+            #         col = w_map[w_name]
+            #         is_sec = w_name in ["시정 (m)", "강수량 (mm)"]
+            #         if w_name == "강수량 (mm)": fig_w.add_trace(go.Bar(x=w_hour['Hour'], y=w_hour[col], name=w_name, marker_color=colors[i]), secondary_y=is_sec)
+            #         else: fig_w.add_trace(go.Scatter(x=w_hour['Hour'], y=w_hour[col], name=w_name, line=dict(color=colors[i])), secondary_y=is_sec)
+            #     fig_w.update_layout(title="시간대별 평균 기상 트렌드", hovermode="x unified")
+            #     fig_w.update_xaxes(tickmode='linear', dtick=1)
+            #     st.plotly_chart(fig_w, use_container_width=True)
 # ------------------------------------------
-# [TAB 4] 상세 지도 분석
+# [TAB 4] 상세 지도 및 기상 분석 통합
 # ------------------------------------------
 with tab4:
-    st.header("🗺️ 상세 지연 인과 및 지도 시각화")
+    st.header("🗺️ 상세 지연 인과 및 지도/기상 시각화")
+    
+    # 1. 사이드바 설정 (기존 로직 유지)
     st.sidebar.header("지도 세부 설정 (Tab 4 전용)")
-    sel_date = st.sidebar.date_input("지도 표시 날짜", min_date, min_value=min_date, max_value=max_date)
+    sel_date = st.sidebar.date_input("조회 날짜", min_date, min_value=min_date, max_value=max_date)
     sel_hour = st.sidebar.slider("지도 표시 시간", 0, 23, 12)
     time_basis = st.sidebar.radio("지도 기준 시간", ["STD (계획)", "RAM (푸시백)"], index=1)
     
     t_col = "STD_Full" if time_basis == "STD (계획)" else "RAM_Full"
-    map_flights = flights.dropna(subset=[t_col, 'Lat'])
-    map_flights = map_flights[(map_flights[t_col].dt.date == sel_date) & (map_flights[t_col].dt.hour == sel_hour)].copy()
+    
+    # [데이터 준비] 선택한 '날짜' 전체 데이터 (기상/통계용)
+    f_day = flights[flights['Date_Only'] == str(sel_date)].copy()
+    
+    # [데이터 준비] 선택한 '시간' 데이터 (지도 마커용)
+    map_flights = f_day[f_day[t_col].dt.hour == sel_hour].copy()
 
+    # 상단 지표 (Metrics)
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("해당 시간 편수", f"{len(map_flights)}편")
     if not map_flights.empty:
+        # 해당 시간 첫 번째 데이터의 기상 정보 표시
         c2.metric("기온 / 이슬점", f"{map_flights['Temp'].iloc[0]}°C / {map_flights['Dew_Point'].iloc[0]}°C")
         c3.metric("풍속 / 풍향", f"{map_flights['Wind_Spd'].iloc[0]}KT / {map_flights['Wind_Dir'].iloc[0]}°")
         c4.metric("기상 (WMO)", map_flights['Weather_Desc'].iloc[0])
 
-    # 인천공항 중심 좌표
+    # --- 지도 시각화 영역 ---
     m = folium.Map(location=[37.46, 126.44], zoom_start=14)
     
-    # 1. 활주로(Runway) 마커 추가 (회색 비행기)
+    # 활주로 마커
     runways = {'33L': (37.4541, 126.4608), '15R': (37.4816, 126.4363), '34R': (37.4433, 126.4416), '16L': (37.4700, 126.4170)}
     for r, c in runways.items(): 
         folium.Marker(c, tooltip=f"Runway {r}", icon=folium.Icon(color='lightgray', icon='road', prefix='fa')).add_to(m)
 
-    # 🌟 2. [신규 추가] 제방빙장(De-icing Pad) 마커 고정 표시 (눈꽃 아이콘)
+    # 제방빙장 마커
     try:
-        # 주기장 데이터셋을 다시 로드하여 제방빙장 위치만 추출
-        zone_file = 'rksi_stands_zoned.csv'
-        if os.path.exists('rksi_stands_zoned (2).csv'): zone_file = 'rksi_stands_zoned (2).csv'
+        zone_file = 'rksi_stands_zoned (2).csv' if os.path.exists('rksi_stands_zoned (2).csv') else 'rksi_stands_zoned.csv'
         df_pads = pd.read_csv(zone_file)
-        
-        # 'De-icing Apron' 카테고리만 필터링
         deice_pads = df_pads[df_pads['Category'].astype(str).str.contains('De-icing', case=False, na=False)]
-        
         for _, pad in deice_pads.iterrows():
             folium.CircleMarker(
-                location=[pad['Lat'], pad['Lon']],
-                radius=5,                 # 🌟 원의 크기 (숫자를 줄이면 더 작아집니다)
-                color='#1E90FF',          # 테두리 색상 (진한 파란색)
-                weight=2,                 # 테두리 두께
-                fill=True,                # 원 안을 색으로 채움
-                fill_color='#87CEFA',     # 채우기 색상 (연한 파란색)
-                fill_opacity=0.7,         # 투명도
-                tooltip=f"❄️ 제방빙장 (Stand {pad['Stand_ID']})"
+                location=[pad['Lat'], pad['Lon']], radius=5, color='#1E90FF', fill=True,
+                fill_color='#87CEFA', fill_opacity=0.7, tooltip=f"❄️ 제방빙장 (Stand {pad['Stand_ID']})"
             ).add_to(m)
-    except Exception as e:
-        pass # 파일이 없거나 오류가 나면 무시하고 패스
+    except: pass
 
-    # 3. 항공편(Flight) 마커 추가
+    # 항공편 마커
     c_dict = {'Normal': 'green', 'Ramp (Gate)': 'red', 'Taxi (Ground)': 'orange', 'Cancelled (CNL)': 'black'}
     for _, row in map_flights.iterrows():
         is_dep = row['Flight_Dir'] == 'DEP'
-        dir_label = "🛫 출발" if is_dep else "🛬 도착"
         fa_icon = "plane-departure" if is_dep else "plane-arrival"
-        
-        popup = f"<b>{row['FLT']} ({dir_label})</b><br>{row['Airline_Group']} | {row['STS_Detail']}<br>Delay: {row['Delay_Cause']}<br>Total: {row['Total_Delay']:.0f}m"
-        tooltip_text = f"{row['FLT']} ({dir_label})"
-        
+        popup = f"<b>{row['FLT']}</b><br>Delay: {row['Delay_Cause']}<br>Total: {row['Total_Delay']:.0f}m"
         folium.Marker(
-            [row['Lat'], row['Lon']], 
-            popup=popup, 
-            tooltip=tooltip_text, 
+            [row['Lat'], row['Lon']], popup=popup, tooltip=row['FLT'],
             icon=folium.Icon(color=c_dict.get(row['Delay_Cause'], 'blue'), icon=fa_icon, prefix='fa')
         ).add_to(m)
 
-    st_folium(m, width="100%", height=650)
+    st_folium(m, width="100%", height=600)
+
+    # =================================================================
+    # 🌟 [추가] 기상 분석 로직 (선택한 날짜 sel_date 연동)
+    # =================================================================
+    st.divider()
+    st.subheader(f"☀️ {sel_date} 기상 및 운영 상세 분석")
+
+    # [데이터 가공] 통계용 기초 데이터 생성
+    f_hour = f_day.copy()
+    h_stats = f_hour.groupby(['Hour', 'STS_Detail']).agg(Flight_Count=('FLT', 'count')).reset_index()
+    w_hour = f_hour.groupby('Hour').agg(
+        Avg_Temp=('Temp', 'mean'), Avg_Dew=('Dew_Point', 'mean'), 
+        Avg_Vis=('Visibility', 'mean'), Avg_Wind=('Wind_Spd', 'mean'), 
+        Avg_Precip=('Precip', 'mean')
+    ).reset_index()
+
+    def get_weather_summary(x):
+        w_list = [str(w) for w in x.dropna().unique() if str(w) not in ['-', 'UNK']]
+        if not w_list: return '알 수 없음'
+        severe_w = [w for w in w_list if w != '일반']
+        return ', '.join(severe_w) if severe_w else '일반 (맑음)'
+
+    # --- 표 1. 시간대별 집중도 및 기상 ---
+    with st.expander("⏰ 시간대별 스케줄 집중도 및 기상 상태 표"):
+        pivot_h = h_stats.pivot(index='Hour', columns='STS_Detail', values='Flight_Count').fillna(0).astype(int)
+        pivot_h['총 운항편수'] = pivot_h.sum(axis=1)
+        hourly_weather = f_hour.groupby('Hour').agg(Avg_Temp=('Temp', 'mean'), Weather_Info=('Weather_Desc', get_weather_summary))
+        pivot_h = pivot_h.join(hourly_weather).rename(columns={'Avg_Temp': '평균 기온', 'Weather_Info': '주요 기상 현상'})
+        pivot_h.index = pivot_h.index.astype(int).astype(str).str.zfill(2) + "시"
+        
+        st.dataframe(pivot_h.style.format({'평균 기온': '{:.1f} °C'}).background_gradient(subset=['총 운항편수'], cmap='Blues'), use_container_width=True)
+
+    # --- 표 2. 강설 영향권별 상세 표 ---
+    with st.expander("📅 강설 영향권별 상세 운영 현황 표"):
+        daily_snow = f_hour.groupby(['Date_Only', 'Snow_Status']).agg(
+            Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'),
+            Avg_Taxi_In=('Taxi_In', 'mean'), Avg_Temp=('Temp', 'mean'),
+            Weather_Info=('Weather_Desc', get_weather_summary)
+        ).reset_index().rename(columns={'Weather_Info': '주요 기상 현상', 'Avg_Temp': '평균 기온'})
+        
+        st.dataframe(daily_snow.style.format({
+            'Avg_Taxi_Out': '{:.1f} 분', 'Avg_Taxi_In': '{:.1f} 분', '평균 기온': '{:.1f} °C'
+        }).background_gradient(subset=['Avg_Taxi_Out', 'Avg_Taxi_In'], cmap='OrRd'), use_container_width=True)
+
+    # --- 그래프 1. 강설 여파 회복 곡선 ---
+    with st.expander("📉 강설 영향권별 지상운영 회복 곡선 (Recovery Curve)"):
+        recovery_stats = f_hour.groupby('Snow_Status').agg(Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Taxi_In=('Taxi_In', 'mean')).reset_index()
+        melt_recovery = recovery_stats.melt(id_vars=['Snow_Status'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
+        if not melt_recovery.empty:
+            fig_rec = px.line(melt_recovery, x='Snow_Status', y='Time', color='Taxi_Type', markers=True, text='Time', title="회복 단계별 평균 지상이동시간 추이")
+            fig_rec.update_traces(texttemplate='%{text:.1f}분', textposition='top center')
+            st.plotly_chart(fig_rec, use_container_width=True)
+
+    # --- 그래프 2. 시간대별 기상 트렌드 (멀티 셀렉트) ---
+    selected_weather = st.multiselect("🌤️ 시각화할 기상 지표 선택", options=["기온 (°C)", "이슬점 온도 (°C)", "시정 (m)", "풍속 (KT)", "강수량 (mm)"], default=["기온 (°C)", "시정 (m)"])
+    w_map = {"기온 (°C)": "Avg_Temp", "이슬점 온도 (°C)": "Avg_Dew", "시정 (m)": "Avg_Vis", "풍속 (KT)": "Avg_Wind", "강수량 (mm)": "Avg_Precip"}
+    
+    if selected_weather:
+        fig_w = make_subplots(specs=[[{"secondary_y": True}]])
+        colors = ['#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3']
+        for i, w_name in enumerate(selected_weather):
+            col = w_map[w_name]
+            is_sec = w_name in ["시정 (m)", "강수량 (mm)"]
+            if w_name == "강수량 (mm)":
+                fig_w.add_trace(go.Bar(x=w_hour['Hour'], y=w_hour[col], name=w_name, marker_color=colors[i]), secondary_y=is_sec)
+            else:
+                fig_w.add_trace(go.Scatter(x=w_hour['Hour'], y=w_hour[col], name=w_name, line=dict(color=colors[i])), secondary_y=is_sec)
+        fig_w.update_layout(title=f"{sel_date} 시간대별 기상 트렌드", hovermode="x unified")
+        st.plotly_chart(fig_w, use_container_width=True)
 # ------------------------------------------
 # [TAB 5] 항공사별 통계
 # ------------------------------------------
