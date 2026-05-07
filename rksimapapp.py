@@ -376,72 +376,72 @@ with tab3:
                     fig_h2.update_xaxes(tickmode='linear', dtick=1)
                     st.plotly_chart(fig_h2, use_container_width=True)
             
-            # # 🌟 [공통] 기상 현상(Weather_Desc)을 요약하기 위한 커스텀 함수
-            # def get_weather_summary(x):
-            #     w_list = [str(w) for w in x.dropna().unique() if str(w) not in ['-', 'UNK']]
-            #     if not w_list: return '알 수 없음'
-            #     severe_w = [w for w in w_list if w != '일반']
-            #     return ', '.join(severe_w) if severe_w else '일반 (맑음)'
+            # 🌟 [공통] 기상 현상(Weather_Desc)을 요약하기 위한 커스텀 함수
+            def get_weather_summary(x):
+                w_list = [str(w) for w in x.dropna().unique() if str(w) not in ['-', 'UNK']]
+                if not w_list: return '알 수 없음'
+                severe_w = [w for w in w_list if w != '일반']
+                return ', '.join(severe_w) if severe_w else '일반 (맑음)'
 
-            # # =========================================================
-            # # 1. 시간대별 스케줄 집중도 표 (피벗 테이블) -> 기상 현상 추가
-            # # =========================================================
-            # with st.expander("⏰ 시간대별 스케줄 집중도 및 운항 상태 표 보기 (클릭하여 펼치기)"):
-            #     st.markdown("선택하신 기간 동안 하루 24시간 중 **어느 시간대(Hour)에 항공편이 가장 많이 몰리는지(Peak Hour)**와 해당 시간의 기상을 나타냅니다.")
+            # =========================================================
+            # 1. 시간대별 스케줄 집중도 표 (피벗 테이블) -> 기상 현상 추가
+            # =========================================================
+            with st.expander("⏰ 시간대별 스케줄 집중도 및 운항 상태 표 보기 (클릭하여 펼치기)"):
+                st.markdown("선택하신 기간 동안 하루 24시간 중 **어느 시간대(Hour)에 항공편이 가장 많이 몰리는지(Peak Hour)**와 해당 시간의 기상을 나타냅니다.")
                 
-            #     # 운항 상태 피벗 테이블 생성
-            #     pivot_h = h_stats.pivot(index='Hour', columns='STS_Detail', values='Flight_Count').fillna(0).astype(int)
-            #     pivot_h['총 운항편수'] = pivot_h.sum(axis=1)
+                # 운항 상태 피벗 테이블 생성
+                pivot_h = h_stats.pivot(index='Hour', columns='STS_Detail', values='Flight_Count').fillna(0).astype(int)
+                pivot_h['총 운항편수'] = pivot_h.sum(axis=1)
                 
-            #     # 시간대별 평균 기온 및 주요 기상 현상 그룹핑
-            #     hourly_weather = f_hour.groupby('Hour').agg(
-            #         Avg_Temp=('Temp', 'mean'),
-            #         Weather_Info=('Weather_Desc', get_weather_summary)
-            #     )
+                # 시간대별 평균 기온 및 주요 기상 현상 그룹핑
+                hourly_weather = f_hour.groupby('Hour').agg(
+                    Avg_Temp=('Temp', 'mean'),
+                    Weather_Info=('Weather_Desc', get_weather_summary)
+                )
                 
-            #     # 피벗 테이블에 기상 정보 병합 및 이름 변경
-            #     pivot_h = pivot_h.join(hourly_weather)
-            #     pivot_h = pivot_h.rename(columns={'Avg_Temp': '평균 기온', 'Weather_Info': '주요 기상 현상'})
+                # 피벗 테이블에 기상 정보 병합 및 이름 변경
+                pivot_h = pivot_h.join(hourly_weather)
+                pivot_h = pivot_h.rename(columns={'Avg_Temp': '평균 기온', 'Weather_Info': '주요 기상 현상'})
                 
-            #     # 인덱스 포맷팅 (00시, 01시...)
-            #     pivot_h.index = pivot_h.index.astype(str).str.zfill(2) + "시"
+                # 인덱스 포맷팅 (00시, 01시...)
+                pivot_h.index = pivot_h.index.astype(str).str.zfill(2) + "시"
                 
-            #     # 표 렌더링 (기온 포맷 및 총 운항편수 파란색 히트맵 적용)
-            #     st.dataframe(
-            #         pivot_h.style.format({'평균 기온': '{:.1f} °C'}).background_gradient(subset=['총 운항편수'], cmap='Blues'),
-            #         use_container_width=True
-            #     )
+                # 표 렌더링 (기온 포맷 및 총 운항편수 파란색 히트맵 적용)
+                st.dataframe(
+                    pivot_h.style.format({'평균 기온': '{:.1f} °C'}).background_gradient(subset=['총 운항편수'], cmap='Blues'),
+                    use_container_width=True
+                )
             
-            # # =========================================================
-            # # 2. 일별 & 강설 영향권별 상세 표 -> Expander 적용
-            # # =========================================================
-            # with st.expander("📅 선택 기간 내 일별 & 강설 영향권별 지상이동시간 상세 표 보기 (클릭하여 펼치기)"):
-            #     st.markdown("달력에서 선택한 기간 동안의 하루하루를 **'눈 내린 상황'**에 따라 쪼개어 보여줍니다. (시간이 오래 걸릴수록 붉은색으로 표시됩니다.)")
+            # =========================================================
+            # 2. 일별 & 강설 영향권별 상세 표 -> Expander 적용
+            # =========================================================
+            with st.expander("📅 선택 기간 내 일별 & 강설 영향권별 지상이동시간 상세 표 보기 (클릭하여 펼치기)"):
+                st.markdown("달력에서 선택한 기간 동안의 하루하루를 **'눈 내린 상황'**에 따라 쪼개어 보여줍니다. (시간이 오래 걸릴수록 붉은색으로 표시됩니다.)")
                 
-            #     daily_snow_tab3 = f_hour.groupby(['Date_Only', 'Snow_Status']).agg(
-            #         Flight_Count=('FLT', 'count'),
-            #         Avg_Taxi_Out=('Taxi_Out', 'mean'),
-            #         Avg_Taxi_In=('Taxi_In', 'mean'),
-            #         Avg_Temp=('Temp', 'mean'),
-            #         Weather_Info=('Weather_Desc', get_weather_summary)
-            #     ).reset_index()
+                daily_snow_tab3 = f_hour.groupby(['Date_Only', 'Snow_Status']).agg(
+                    Flight_Count=('FLT', 'count'),
+                    Avg_Taxi_Out=('Taxi_Out', 'mean'),
+                    Avg_Taxi_In=('Taxi_In', 'mean'),
+                    Avg_Temp=('Temp', 'mean'),
+                    Weather_Info=('Weather_Desc', get_weather_summary)
+                ).reset_index()
                 
-            #     daily_snow_tab3 = daily_snow_tab3.sort_values(by=['Date_Only', 'Snow_Status'])
-            #     daily_snow_tab3 = daily_snow_tab3.rename(columns={'Weather_Info': '주요 기상 현상', 'Avg_Temp': '평균 기온'})
+                daily_snow_tab3 = daily_snow_tab3.sort_values(by=['Date_Only', 'Snow_Status'])
+                daily_snow_tab3 = daily_snow_tab3.rename(columns={'Weather_Info': '주요 기상 현상', 'Avg_Temp': '평균 기온'})
                 
-            #     st.dataframe(
-            #         daily_snow_tab3.style.format({
-            #             'Flight_Count': '{:,.0f} 편',
-            #             'Avg_Taxi_Out': '{:.1f} 분',
-            #             'Avg_Taxi_In': '{:.1f} 분',
-            #             '평균 기온': '{:.1f} °C'
-            #         }).background_gradient(
-            #             subset=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
-            #             cmap='OrRd' 
-            #         ),
-            #         use_container_width=True
-            #     )
-            # st.divider()
+                st.dataframe(
+                    daily_snow_tab3.style.format({
+                        'Flight_Count': '{:,.0f} 편',
+                        'Avg_Taxi_Out': '{:.1f} 분',
+                        'Avg_Taxi_In': '{:.1f} 분',
+                        '평균 기온': '{:.1f} °C'
+                    }).background_gradient(
+                        subset=['Avg_Taxi_Out', 'Avg_Taxi_In'], 
+                        cmap='OrRd' 
+                    ),
+                    use_container_width=True
+                )
+            st.divider()
 
             # # =========================================================
             # # 🌟 [신규 추가] 3. 강설 여파 회복 곡선 (Recovery Curve) -> Expander 적용
