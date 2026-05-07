@@ -587,7 +587,7 @@ with tab4:
         severe_w = [w for w in w_list if w != '일반']
         return ', '.join(severe_w) if severe_w else '일반 (맑음)'
 
-# =========================================================
+    # =========================================================
     # 🌟 [통합] 시간대별 운항 상태 & 지상운영 & 기상 통합 분석 표
     # =========================================================
     with st.expander("⏰ 시간대별 운항 현황 & 기상 & 지상이동 통합 분석 (클릭하여 펼치기)", expanded=True):
@@ -646,7 +646,7 @@ with tab4:
                     'Taxi-Out(평균)': '{:.1f} 분',
                     'Taxi-In(평균)': '{:.1f} 분',
                     '평균 기온': '{:.1f} °C'
-                }).background_gradient(subset=['총 편수'] + status_cols, cmap='Blues') # 운항 편수는 파란색
+                }).background_gradient(subset=['총_편수'] + status_cols, cmap='Blues') # 운항 편수는 파란색
                   .background_gradient(subset=['Taxi-Out(평균)', 'Taxi-In(평균)'], cmap='OrRd'), # 이동 시간은 주황색
                 use_container_width=True
             )
