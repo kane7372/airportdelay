@@ -514,7 +514,7 @@ with tab4:
     t_col = "STD_Full" if time_basis == "STD (계획)" else "RAM_Full"
     
     # [데이터 준비] 선택한 '날짜' 전체 데이터 (기상/통계용)
-    f_day = flights[flights['Date_Only'] == str(sel_date)].copy()
+    f_day = flights[pd.to_datetime(flights['Date_Only']).dt.date == sel_date].copy()
     
     map_flights = f_day[f_day[t_col].dt.hour == sel_hour].copy()
 
