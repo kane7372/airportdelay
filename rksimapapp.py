@@ -338,7 +338,12 @@ with tab2:
     
     c1, c2 = st.columns(2)
     with c1: st.plotly_chart(px.bar(daily_stats, x='Date_Only', y='Delay_Count', color='STS_Detail', title="일별 지연 건수", barmode='stack'), use_container_width=True)
-    with c2: st.plotly_chart(px.line(daily_stats, x='Date_Only', y='Taxi_Ratio', color='STS_Detail', markers=True, title="일별 지연시간 중 지상이동 비중(%)"), use_container_width=True)
+    with c2: 
+        # 1. Taxi_Ratio가 0보다 큰(0이 아닌) 진짜 지연 데이터만 뜰채로 걸러냅니다.
+        c2_stats = daily_stats[daily_stats['Taxi_Ratio'] > 0]
+        
+        # 2. 걸러낸 c2_stats를 사용해서 차트를 그립니다.
+        st.plotly_chart(px.line(c2_stats, x='Date_Only', y='Taxi_Ratio', color='STS_Detail', markers=True, title="일별 지연시간 중 지상이동 비중(%)"), use_container_width=True)
 
 # ------------------------------------------
 # [TAB 3] 시간대별 통계
