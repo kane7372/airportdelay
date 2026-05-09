@@ -338,6 +338,8 @@ with tab2:
     
     c1, c2 = st.columns(2)
     with c1: st.plotly_chart(px.bar(daily_stats, x='Date_Only', y='Delay_Count', color='STS_Detail', title="일별 지연 건수", barmode='stack'), use_container_width=True)
+    
+    daily_stats['Taxi_Ratio'] = daily_stats['Taxi_Ratio'].clip(upper=100)
     with c2: 
         # 1. Taxi_Ratio가 0보다 큰(0이 아닌) 진짜 지연 데이터만 뜰채로 걸러냅니다.
         c2_stats = daily_stats[daily_stats['Taxi_Ratio'] > 0]
