@@ -267,8 +267,16 @@ with tab1:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("💡 전체 지연시간 중 지상이동(Taxi)이 차지하는 비중")
-    st.plotly_chart(px.line(monthly_stats, x='YM', y='Taxi_Ratio', color='STS_Detail', markers=True, title="월별 지연시간 대비 지상이동시간 비중 (%)"), use_container_width=True)
+st.subheader("💡 지상이동(Taxi) 지연시간 대비 전체 지연시간 비율")
+fig_bar = px.bar(
+    monthly_stats, 
+    x='YM', 
+    y='Delay_to_Taxi_Ratio', 
+    color='STS_Detail', 
+    barmode='group',  # 막대들을 겹치지 않고 나란히 세우기
+    title="월별 지상이동 지연시간 대비 전체 지연시간 비율 (%)"
+)
+st.plotly_chart(fig_bar, use_container_width=True)
 # ------------------------------------------
 # [TAB 2] 일별 통계
 # ------------------------------------------
