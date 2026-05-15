@@ -186,6 +186,7 @@ with tab1:
     (monthly_stats['Sum_Delay'] / monthly_stats['Sum_Taxi_Delay']) * 100, 
     np.nan 
 )
+    monthly_stats['Delay_to_Taxi_Ratio'] = np.clip(monthly_stats['Delay_to_Taxi_Ratio'], 0, 100)
     
     c1, c2 = st.columns(2)
     with c1: 
