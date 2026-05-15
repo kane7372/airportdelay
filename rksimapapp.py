@@ -249,9 +249,23 @@ with tab1:
         c3_stats = monthly_stats[~monthly_stats['STS_Detail'].str.contains('CNL|DLA', na=False)]
         st.plotly_chart(px.bar(c3_stats, x='YM', y='Avg_Total_Delay', color='STS_Detail', barmode='group', title="전체 항공편 단순 평균 지연 시간(분)"), use_container_width=True)
     with c4 : st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Delay_Time', color='STS_Detail', barmode='group', title="15분 이상 지연 항공편 월평균 지연 시간(분)"), use_container_width=True)
-    with c5 :
-        melt_t = monthly_stats.melt(id_vars=['YM', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
-        if not melt_t.empty: st.plotly_chart(px.line(melt_t, x='YM', y='Time', color='STS_Detail', line_dash='Taxi_Type', markers=True, title="월평균 지상이동시간"), use_container_width=True)
+    #추세그래프
+    # with c5 :
+    #     melt_t = monthly_stats.melt(id_vars=['YM', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
+    #     if not melt_t.empty: st.plotly_chart(px.line(melt_t, x='YM', y='Time', color='STS_Detail', line_dash='Taxi_Type', markers=True, title="월평균 지상이동시간"), use_container_width=True)
+    with c5:
+    melt_t = monthly_stats.melt(id_vars=['YM', 'STS_Detail'], value_vars=['Avg_Taxi_Out', 'Avg_Taxi_In'], var_name='Taxi_Type', value_name='Time').dropna()
+    if not melt_t.empty: 
+        fig = px.bar(
+            melt_t, 
+            x='YM', 
+            y='Time', 
+            color='STS_Detail', 
+            facet_col='Taxi_Type',     # Taxi_Type을 기준으로 그래프를 좌우로 나눔
+            barmode='group', 
+            title="월평균 지상이동시간"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("💡 전체 지연시간 중 지상이동(Taxi)이 차지하는 비중")
     st.plotly_chart(px.line(monthly_stats, x='YM', y='Taxi_Ratio', color='STS_Detail', markers=True, title="월별 지연시간 대비 지상이동시간 비중 (%)"), use_container_width=True)
