@@ -180,13 +180,23 @@ with tab1:
         Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Taxi_In=('Taxi_In', 'mean'),
         Sum_Delay=('Delayed_Total_Time', 'sum'), Sum_Taxi_Delay=('Delayed_Taxi_Time', 'sum')
     ).reset_index()    
+#     monthly_stats['Taxi_Ratio'] = np.where(
+#     monthly_stats['Sum_Delay'] > 0, 
+#     (monthly_stats['Sum_Taxi_Delay'] / monthly_stats['Sum_Delay']) * 100, 
+#     np.nan 
+# )
+    # # 2. 100% 캡 씌우기 (0~100% 제한)
+    # monthly_stats['Taxi_Ratio'] = np.clip(monthly_stats['Taxi_Ratio'], 0, 100)
+   
+# 1. 비율 계산: (지상이동시간 / 지연시간) * 100
+# 분모(Sum_Delay)가 0보다 클 때만 계산하여 0으로 나누는 오류 방지 및 빈 데이터(np.nan) 처리
     monthly_stats['Taxi_Ratio'] = np.where(
     monthly_stats['Sum_Delay'] > 0, 
     (monthly_stats['Sum_Taxi_Delay'] / monthly_stats['Sum_Delay']) * 100, 
     np.nan 
 )
 
-    # 2. 100% 캡 씌우기 (0~100% 제한)
+# 2. 비율 100% 캡 씌우기 (비정상적인 데이터로 인해 100%를 넘는 경우 방지)
     monthly_stats['Taxi_Ratio'] = np.clip(monthly_stats['Taxi_Ratio'], 0, 100)
     
     c1, c2 = st.columns(2)
@@ -272,16 +282,33 @@ with tab1:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-# 3. 막대그래프로 그리기
+# # 3. 막대그래프로 그리기
+# st.subheader("💡 전체 지연시간 중 지상이동(Taxi)이 차지하는 비중")
+# fig_bar = px.bar(
+#     monthly_stats, 
+#     x='YM', 
+#     y='Taxi_Ratio', 
+#     color='STS_Detail', 
+#     barmode='group',  # 세부 항목(STS_Detail)별로 막대를 옆으로 나란히 배치
+#     title="월별 지연시간 대비 지상이동시간 비중 (%)"
+# )
+
+# st.plotly_chart(fig_bar, use_container_width=True)
+
+# 3. 막대그래프 그리기
 st.subheader("💡 전체 지연시간 중 지상이동(Taxi)이 차지하는 비중")
+
 fig_bar = px.bar(
     monthly_stats, 
     x='YM', 
     y='Taxi_Ratio', 
     color='STS_Detail', 
-    barmode='group',  # 세부 항목(STS_Detail)별로 막대를 옆으로 나란히 배치
+    barmode='group',  # 막대 겹침 방지 및 나란히 배치
     title="월별 지연시간 대비 지상이동시간 비중 (%)"
 )
+
+# Y축의 범위를 0~100으로 고정하여 비율의 변화를 더 명확하게 보여줌 (선택 사항)
+fig_bar.update_yaxes(range=[0, 105])
 
 st.plotly_chart(fig_bar, use_container_width=True)
 # ------------------------------------------
