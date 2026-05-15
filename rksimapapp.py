@@ -183,9 +183,11 @@ with tab1:
     monthly_stats['Taxi_Ratio'] = np.where(
     monthly_stats['Sum_Delay'] > 0, 
     (monthly_stats['Sum_Taxi_Delay'] / monthly_stats['Sum_Delay']) * 100, 
-    np.nan # 0 대신 np.nan을 넣어야 값이 없을 때 그래프가 끊어집니다.
+    np.nan 
 )
-    monthly_stats['Taxi_Ratio'] = np.clip(monthly_stats['Taxi_Ratio'], 0, 100)
+
+# 2. 100% 캡 씌우기 (0~100% 제한)
+monthly_stats['Taxi_Ratio'] = np.clip(monthly_stats['Taxi_Ratio'], 0, 100)
     
     c1, c2 = st.columns(2)
     with c1: 
@@ -270,15 +272,17 @@ with tab1:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("💡 지상이동(Taxi) 지연시간 대비 전체 지연시간 비율")
+# 3. 막대그래프로 그리기
+st.subheader("💡 전체 지연시간 중 지상이동(Taxi)이 차지하는 비중")
 fig_bar = px.bar(
     monthly_stats, 
     x='YM', 
-    y='Delay_to_Taxi_Ratio', 
+    y='Taxi_Ratio', 
     color='STS_Detail', 
-    barmode='group',  # 막대들을 겹치지 않고 나란히 세우기
-    title="월별 지상이동 지연시간 대비 전체 지연시간 비율 (%)"
+    barmode='group',  # 세부 항목(STS_Detail)별로 막대를 옆으로 나란히 배치
+    title="월별 지연시간 대비 지상이동시간 비중 (%)"
 )
+
 st.plotly_chart(fig_bar, use_container_width=True)
 # ------------------------------------------
 # [TAB 2] 일별 통계
