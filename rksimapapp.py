@@ -180,13 +180,12 @@ with tab1:
         Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Taxi_In=('Taxi_In', 'mean'),
         Sum_Delay=('Delayed_Total_Time', 'sum'), Sum_Taxi_Delay=('Delayed_Taxi_Time', 'sum')
     ).reset_index()    
-    # 지상이동 비율 계산 및 100% 캡 씌우기
-    monthly_stats['Delay_to_Taxi_Ratio'] = np.where(
-    monthly_stats['Sum_Taxi_Delay'] > 0, 
-    (monthly_stats['Sum_Delay'] / monthly_stats['Sum_Taxi_Delay']) * 100, 
-    np.nan 
+    monthly_stats['Taxi_Ratio'] = np.where(
+    monthly_stats['Sum_Delay'] > 0, 
+    (monthly_stats['Sum_Taxi_Delay'] / monthly_stats['Sum_Delay']) * 100, 
+    np.nan # 0 대신 np.nan을 넣어야 값이 없을 때 그래프가 끊어집니다.
 )
-    monthly_stats['Delay_to_Taxi_Ratio'] = np.clip(monthly_stats['Delay_to_Taxi_Ratio'], 0, 100)
+    monthly_stats['Taxi_Ratio'] = np.clip(monthly_stats['Taxi_Ratio'], 0, 100)
     
     c1, c2 = st.columns(2)
     with c1: 
