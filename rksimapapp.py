@@ -186,8 +186,8 @@ with tab1:
     np.nan 
 )
 
-# 2. 100% 캡 씌우기 (0~100% 제한)
-monthly_stats['Taxi_Ratio'] = np.clip(monthly_stats['Taxi_Ratio'], 0, 100)
+    # 2. 100% 캡 씌우기 (0~100% 제한)
+    monthly_stats['Taxi_Ratio'] = np.clip(monthly_stats['Taxi_Ratio'], 0, 100)
     
     c1, c2 = st.columns(2)
     with c1: 
