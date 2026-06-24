@@ -179,13 +179,19 @@ with tab1:
     
     c1, c2 = st.columns(2)
     with c1: 
-        st.plotly_chart(px.bar(monthly_stats, x='YM', y='Flight_Count', color='STS_Detail', barmode='stack', title="월별 출발 편수"), use_container_width=True)
+        fig_c1 = px.bar(monthly_stats, x='YM', y='Flight_Count', color='STS_Detail', barmode='stack', title="월별 출발 편수")
+        # 🌟 핵심: X축을 범주형(category)으로 설정하여 빈 날짜(달) 공백 제거
+        fig_c1.update_xaxes(type='category', categoryorder='category ascending')
+        st.plotly_chart(fig_c1, use_container_width=True)
+        
     with c2: 
         bad_stats = monthly_stats[
             (monthly_stats['Delay_Count'] > 0) | 
             (monthly_stats['STS_Detail'].str.contains('결항|cnl', case=False, na=False))
         ]
         fig_c2 = px.line(bad_stats, x='YM', y='Flight_Count', color='STS_Detail', markers=True, title="월별 지연/결항 건수")
+        # 🌟 라인 차트에도 동일하게 범주형 적용
+        fig_c2.update_xaxes(type='category', categoryorder='category ascending')
         st.plotly_chart(fig_c2, use_container_width=True)        
     
     st.divider()
@@ -215,12 +221,19 @@ with tab1:
     c3, c4 = st.columns(2)
     with c3: 
         c3_stats = monthly_stats[~monthly_stats['STS_Detail'].str.contains('CNL|DLA', na=False)]
-        st.plotly_chart(px.bar(c3_stats, x='YM', y='Avg_Total_Delay', color='STS_Detail', barmode='group', title="정상 항공편 단순 평균 지연 시간(분)"), use_container_width=True)
+        fig_c3 = px.bar(c3_stats, x='YM', y='Avg_Total_Delay', color='STS_Detail', barmode='group', title="정상 항공편 단순 평균 지연 시간(분)")
+        fig_c3.update_xaxes(type='category', categoryorder='category ascending')
+        st.plotly_chart(fig_c3, use_container_width=True)
+        
     with c4:
-        st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Delay_Time', color='STS_Detail', barmode='group', title="지연 항공편 월평균 지연 시간(분)"), use_container_width=True)
+        fig_c4 = px.bar(monthly_stats, x='YM', y='Avg_Delay_Time', color='STS_Detail', barmode='group', title="지연 항공편 월평균 지연 시간(분)")
+        fig_c4.update_xaxes(type='category', categoryorder='category ascending')
+        st.plotly_chart(fig_c4, use_container_width=True)
 
     # 지상이동시간 추세그래프 (Taxi-Out 전용)
-    st.plotly_chart(px.bar(monthly_stats, x='YM', y='Avg_Taxi_Out', color='STS_Detail', barmode='group', title="월별 평균 Taxi-Out 소요시간(분)"), use_container_width=True)
+    fig_taxi_out = px.bar(monthly_stats, x='YM', y='Avg_Taxi_Out', color='STS_Detail', barmode='group', title="월별 평균 Taxi-Out 소요시간(분)")
+    fig_taxi_out.update_xaxes(type='category', categoryorder='category ascending')
+    st.plotly_chart(fig_taxi_out, use_container_width=True)
 
     st.subheader("💡 지상이동(Taxi) 지연시간 대비 전체 지연시간 비율")
     fig_bar = px.bar(
@@ -231,6 +244,7 @@ with tab1:
         barmode='group', 
         title="월별 지상이동 지연시간 대비 전체 지연시간 비율 (%)"
     )
+    fig_bar.update_xaxes(type='category', categoryorder='category ascending')
     st.plotly_chart(fig_bar, use_container_width=True)
 
 # ------------------------------------------
