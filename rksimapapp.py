@@ -15,7 +15,7 @@ st.set_page_config(page_title="Incheon Airport Ultimate Dashboard", layout="wide
 # ==========================================
 @st.cache_data
 def load_data():
-    file_path = 'master_dashboard_data.parquet2'
+    file_path = 'master_dashboard_data2.parquet'
     if not os.path.exists(file_path):
         file_path = 'master_dashboard_data.csv'
         if not os.path.exists(file_path):
