@@ -15,7 +15,7 @@ st.set_page_config(page_title="Incheon Airport Departure Dashboard", layout="wid
 # ==========================================
 @st.cache_data
 def load_data():
-    file_path = 'master_dashboard_data2.parquet'
+    file_path = 'master_dashboard_data.parquet'
     if not os.path.exists(file_path):
         file_path = 'master_dashboard_data.csv'
         if not os.path.exists(file_path):
@@ -34,6 +34,7 @@ def load_data():
         df['Delayed_Total_Time'] = np.where(df['Is_Delayed'] & (df['Total_Delay'] > 0), df['Total_Delay'], 0)
         df['Delayed_Taxi_Time'] = np.where(df['Is_Delayed'] & (df['Total_Delay'] > 0), df['Taxi_Time'], 0)
         
+        # 항공사 그룹 분류
         domestic_fsc = ['KAL', 'AAR']
         domestic_lcc = ['JJA', 'JNA', 'TWB', 'ABL', 'ASV', 'ESR', 'APZ', 'FGW', 'ARO']
         
@@ -44,6 +45,18 @@ def load_data():
             else: return '외항사 (Foreign)'
             
         df['Airline_Group'] = df['Airline'].apply(categorize_airline)
+        
+        # 🌟 기상 유형 카테고리화 (Tab 6 전용)
+        # 마스터 데이터에 이미 계산된 Weather_Desc 컬럼 활용
+        def categorize_weather(w_desc):
+            w = str(w_desc)
+            if '건설' in w: return '건설 (Dry Snow)'
+            elif '습설' in w: return '습설 (Wet Snow)'
+            elif '날림눈' in w or '눈보라' in w: return '건설 (Dry Snow)' # 강풍 동반 눈
+            elif '어는 비' in w or '결빙' in w or '진눈깨비' in w: return '기타 제방빙 위험기상'
+            else: return '비강설 (Non-Snow)'
+            
+        df['Snow_Type'] = df['Weather_Desc'].apply(categorize_weather)
         
         return df, "Success"
     except Exception as e:
@@ -60,7 +73,6 @@ if flights_raw is None:
 # ==========================================
 st.sidebar.header("🎯 통합 데이터 필터")
 
-# 0. 이상치 필터
 st.sidebar.markdown("### 🧹 데이터 클렌징 필터")
 exclude_outliers = st.sidebar.checkbox(
     "비정상 지상이동시간 제외 (3-Sigma)", 
@@ -69,17 +81,14 @@ exclude_outliers = st.sidebar.checkbox(
 )
 st.sidebar.divider()
 
-# 1. 여객/화물 필터
 available_pax_cgo = sorted(flights_raw['Pax_Cgo'].dropna().unique().tolist())
 selected_pax_cgo = st.sidebar.multiselect("1️⃣ 여객/화물 구분 (Pax/Cgo)", options=available_pax_cgo, default=available_pax_cgo)
 
-# 2. 운항 상태 필터 (DEP_DEP, DEP_DLA, DEP_CNL 등)
 available_sts = sorted(flights_raw['STS_Detail'].dropna().unique().tolist())
 selected_sts = st.sidebar.multiselect("2️⃣ 출발 운항 상태 (STS2 기준)", options=available_sts, default=available_sts)
 
 st.sidebar.divider()
 
-# 3. 항공사 그룹 연동 필터
 st.sidebar.markdown("### ✈️ 항공사 선택 (그룹 연동)")
 available_groups = ["국내 FSC (대형사)", "국내 LCC (저비용)", "외항사 (Foreign)", "분류 불명 (Unknown)"]
 active_groups = [g for g in available_groups if g in flights_raw['Airline_Group'].unique()]
@@ -91,22 +100,13 @@ if selected_groups:
 else:
     filtered_airline_list = []
 
-selected_airlines = st.sidebar.multiselect(
-    "3️⃣-B. 개별 항공사 선택", 
-    options=filtered_airline_list, 
-    default=filtered_airline_list
-)
+selected_airlines = st.sidebar.multiselect("3️⃣-B. 개별 항공사 선택", options=filtered_airline_list, default=filtered_airline_list)
 
 st.sidebar.divider()
 
-# 4. 강설 영향권 필터
 st.sidebar.markdown("### ❄️ 강설 여파(Snow Impact) 필터")
 available_snow = sorted(flights_raw['Snow_Status'].dropna().unique().tolist())
-selected_snow = st.sidebar.multiselect(
-    "4️⃣ 강설 영향권 선택", 
-    options=available_snow, 
-    default=available_snow
-)
+selected_snow = st.sidebar.multiselect("4️⃣ 강설 영향권 선택", options=available_snow, default=available_snow)
 
 # ==========================================
 # 데이터 필터링 적용
@@ -132,7 +132,6 @@ if 'YM' in flights.columns:
 is_cnl = flights['STS_Detail'].str.contains('결항|cnl', case=False, na=False)
 flights.loc[is_cnl, 'Total_Delay'] = flights.loc[is_cnl, 'Total_Delay'].fillna(0)
 flights.loc[is_cnl, 'Taxi_Out'] = flights.loc[is_cnl, 'Taxi_Out'].fillna(0)
-# Taxi_In 처리는 불필요하여 제거
 
 # ==========================================
 # 2. UI Layout & Tabs
@@ -145,17 +144,17 @@ if flights.empty:
 
 total_count = len(flights_raw)
 filtered_count = len(flights)
-
 st.info(f"📊 **현재 설정된 필터 기준 데이터:** 총 **{filtered_count:,}** 건 (전체 {total_count:,} 건)")
 
 st.divider()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📅 1. 월별 통계", 
     "📆 2. 일별 통계", 
     "⏰ 3. 시간대별 통계", 
     "🗺️ 4. 상세 지도 분석",
-    "✈️ 5. 항공사별 통계"
+    "✈️ 5. 항공사별 통계",
+    "❄️ 6. 제방빙 및 강설 심층 분석" # 신규 탭
 ])
 
 # ------------------------------------------
@@ -167,7 +166,7 @@ with tab1:
         Flight_Count=('FLT', 'count'), Delay_Count=('Is_Delayed', 'sum'),
         Avg_Delay_Time=('Total_Delay', lambda x: x[x > 15].mean() if len(x[x > 15]) > 0 else 0),
         Avg_Total_Delay=('Total_Delay', 'mean'), 
-        Avg_Taxi_Out=('Taxi_Out', 'mean'), # Taxi_In 제거
+        Avg_Taxi_Out=('Taxi_Out', 'mean'),
         Sum_Delay=('Delayed_Total_Time', 'sum'), Sum_Taxi_Delay=('Delayed_Taxi_Time', 'sum')
     ).reset_index()    
     
@@ -180,7 +179,6 @@ with tab1:
     c1, c2 = st.columns(2)
     with c1: 
         fig_c1 = px.bar(monthly_stats, x='YM', y='Flight_Count', color='STS_Detail', barmode='stack', title="월별 출발 편수")
-        # 🌟 핵심: X축을 범주형(category)으로 설정하여 빈 날짜(달) 공백 제거
         fig_c1.update_xaxes(type='category', categoryorder='category ascending')
         st.plotly_chart(fig_c1, use_container_width=True)
         
@@ -190,7 +188,6 @@ with tab1:
             (monthly_stats['STS_Detail'].str.contains('결항|cnl', case=False, na=False))
         ]
         fig_c2 = px.line(bad_stats, x='YM', y='Flight_Count', color='STS_Detail', markers=True, title="월별 지연/결항 건수")
-        # 🌟 라인 차트에도 동일하게 범주형 적용
         fig_c2.update_xaxes(type='category', categoryorder='category ascending')
         st.plotly_chart(fig_c2, use_container_width=True)        
     
@@ -230,7 +227,6 @@ with tab1:
         fig_c4.update_xaxes(type='category', categoryorder='category ascending')
         st.plotly_chart(fig_c4, use_container_width=True)
 
-    # 지상이동시간 추세그래프 (Taxi-Out 전용)
     fig_taxi_out = px.bar(monthly_stats, x='YM', y='Avg_Taxi_Out', color='STS_Detail', barmode='group', title="월별 평균 Taxi-Out 소요시간(분)")
     fig_taxi_out.update_xaxes(type='category', categoryorder='category ascending')
     st.plotly_chart(fig_taxi_out, use_container_width=True)
@@ -254,18 +250,14 @@ with tab2:
     st.header("📆 일별 출발 운항 및 지연 트렌드")
     daily_stats = flights.groupby(['Date_Only', 'STS_Detail', 'Snow_Status']).agg(
         Flight_Count=('FLT', 'count'), Delay_Count=('Is_Delayed', 'sum'),
-        Avg_Taxi_Out=('Taxi_Out', 'mean'), # Taxi_In 제거
+        Avg_Taxi_Out=('Taxi_Out', 'mean'),
         Sum_Delay=('Delayed_Total_Time', 'sum'), Sum_Taxi_Delay=('Delayed_Taxi_Time', 'sum')
     ).reset_index()
     daily_stats['Taxi_Ratio'] = np.where(daily_stats['Sum_Delay'] > 0, (daily_stats['Sum_Taxi_Delay'] / daily_stats['Sum_Delay']) * 100, 0)
     
     st.subheader("❄️ 기상(강설) 여부에 따른 출발 지상이동시간(Taxi-Out) 운영 임계점 분석")
-    st.markdown("각 강설 상태별 평균 Taxi-Out 시간과 통제 한계선을 제시합니다.")
-    
     snow_summary = flights.groupby('Snow_Status').agg(
-        Flight_Count=('FLT', 'count'),
-        Avg_Taxi_Out=('Taxi_Out', 'mean'),
-        Std_Taxi_Out=('Taxi_Out', 'std')
+        Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), Std_Taxi_Out=('Taxi_Out', 'std')
     ).reset_index().fillna(0)
     
     snow_summary['Taxi_Out_2Sig'] = snow_summary['Avg_Taxi_Out'] + (2 * snow_summary['Std_Taxi_Out'])
@@ -275,10 +267,8 @@ with tab2:
     
     st.dataframe(
         display_summary.style.format({
-            'Flight_Count': '{:,.0f} 편',
-            'Avg_Taxi_Out': '{:.1f} 분 (평균)',
-            'Taxi_Out_2Sig': '{:.1f} 분 (경고선)',
-            'Taxi_Out_3Sig': '🚨 {:.1f} 분 (마비선)'
+            'Flight_Count': '{:,.0f} 편', 'Avg_Taxi_Out': '{:.1f} 분 (평균)',
+            'Taxi_Out_2Sig': '{:.1f} 분 (경고선)', 'Taxi_Out_3Sig': '🚨 {:.1f} 분 (마비선)'
         }).background_gradient(subset=['Taxi_Out_3Sig'], cmap='Reds'),
         use_container_width=True
     )    
@@ -318,14 +308,10 @@ with tab3:
         
         if not f_hour.empty:
             h_stats = f_hour.groupby(['Hour', 'STS_Detail']).agg(
-                Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), # Taxi_In 제거
+                Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'),
                 Sum_Delay=('Delayed_Total_Time', 'sum'), Sum_Taxi_Delay=('Delayed_Taxi_Time', 'sum')
             ).reset_index()
             h_stats['Taxi_Ratio'] = np.where(h_stats['Sum_Delay'] > 0, (h_stats['Sum_Taxi_Delay'] / h_stats['Sum_Delay']) * 100, 0)
-            
-            w_hour = f_hour.groupby('Hour').agg(
-                Avg_Temp=('Temp', 'mean'), Avg_Dew=('Dew_Point', 'mean'), Avg_Vis=('Visibility', 'mean'), Avg_Wind=('Wind_Spd', 'mean'), Avg_Precip=('Precip', 'mean')
-            ).reset_index()
             
             c1, c2 = st.columns(2)
             with c1: 
@@ -386,14 +372,12 @@ with tab4:
         c1.metric("해당 시간 편수", f"{len(map_flights)}편")
         if not map_flights.empty:
             c2.metric("기온 / 이슬점", f"{map_flights['Temp'].iloc[0]}°C / {map_flights['Dew_Point'].iloc[0]}°C")
-            c3.metric("풍속 / 풍향", f"{map_flights['Wind_Spd'].iloc[0]}KT / {map_flights['Wind_Dir'].iloc[0]}°")
+            c3.metric("풍속 / 습도", f"{map_flights['Wind_Spd'].iloc[0]}KT / {map_flights.get('Humidity', pd.Series([np.nan])).iloc[0]}%")
             c4.metric("기상 (WMO)", map_flights['Weather_Desc'].iloc[0])
 
         m = folium.Map(location=[37.46, 126.44], zoom_start=14)
-        
         runways = {'33L': (37.4541, 126.4608), '15R': (37.4816, 126.4363), '34R': (37.4433, 126.4416), '16L': (37.4700, 126.4170)}
-        for r, c in runways.items(): 
-            folium.Marker(c, tooltip=f"Runway {r}", icon=folium.Icon(color='lightgray', icon='road', prefix='fa')).add_to(m)
+        for r, c in runways.items(): folium.Marker(c, tooltip=f"Runway {r}", icon=folium.Icon(color='lightgray', icon='road', prefix='fa')).add_to(m)
 
         try:
             zone_file = 'rksi_stands_zoned (2).csv' if os.path.exists('rksi_stands_zoned (2).csv') else 'rksi_stands_zoned.csv'
@@ -414,7 +398,6 @@ with tab4:
                 [row['Lat'], row['Lon']], popup=popup, tooltip=row['FLT'],
                 icon=folium.Icon(color=c_dict.get(row['Delay_Cause'], 'blue'), icon=fa_icon, prefix='fa')
             ).add_to(m)
-
         st_folium(m, width="100%", height=600)
 
     st.divider()
@@ -424,17 +407,18 @@ with tab4:
     w_hour = f_hour.groupby('Hour').agg(
         Avg_Temp=('Temp', 'mean'), Avg_Dew=('Dew_Point', 'mean'), 
         Avg_Vis=('Visibility', 'mean'), Avg_Wind=('Wind_Spd', 'mean'), 
-        Avg_Precip=('Precip', 'mean')
+        Avg_Precip=('Precip', 'mean'), Avg_Hum=('Humidity', 'mean')
     ).reset_index()
 
-    with st.expander("⏰ 시간대별 운항 현황 & 기상 & 지상이동 통합 분석", expanded=True):
+    with st.expander("⏰ 시간대별 운항 현황 & 기상 통합 분석", expanded=True):
         pivot_sts = f_hour.groupby(['Hour', 'Snow_Status', 'STS_Detail']).size().unstack(fill_value=0)
         metrics_base = f_hour.groupby(['Hour', 'Snow_Status']).agg(
-            총_편수=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Temp=('Temp', 'mean'), Weather_Info=('Weather_Desc', get_weather_summary)
+            총_편수=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Temp=('Temp', 'mean'), 
+            Avg_Hum=('Humidity', 'mean'), Weather_Info=('Weather_Desc', get_weather_summary)
         )
         combined_df = metrics_base.join(pivot_sts).reset_index().sort_values(by=['Hour', 'Snow_Status'])
         combined_df['Hour'] = combined_df['Hour'].astype(int).astype(str).str.zfill(2) + "시"
-        combined_df = combined_df.rename(columns={'Hour': '시간대', 'Snow_Status': '강설 영향권', 'Weather_Info': '주요 기상 현상', 'Avg_Temp': '평균 기온', 'Avg_Taxi_Out': 'Taxi-Out(평균)'})
+        combined_df = combined_df.rename(columns={'Hour': '시간대', 'Snow_Status': '강설 영향권', 'Weather_Info': '주요 기상 현상', 'Avg_Temp': '평균 기온', 'Avg_Hum': '평균 상대습도', 'Avg_Taxi_Out': 'Taxi-Out(평균)'})
 
         f_col1, f_col2 = st.columns(2)
         with f_col1: sel_hours = st.multiselect("⏰ 시간대 필터", options=combined_df['시간대'].unique())
@@ -447,13 +431,12 @@ with tab4:
         if not filtered_df.empty:
             status_cols = [c for c in pivot_sts.columns if c in filtered_df.columns]
             st.dataframe(
-                filtered_df.style.format({'총 편수': '{:,.0f} 편', 'Taxi-Out(평균)': '{:.1f} 분', '평균 기온': '{:.1f} °C'})
+                filtered_df.style.format({'총 편수': '{:,.0f} 편', 'Taxi-Out(평균)': '{:.1f} 분', '평균 기온': '{:.1f} °C', '평균 상대습도': '{:.1f} %'})
                 .background_gradient(subset=['총_편수'] + status_cols, cmap='Blues')
                 .background_gradient(subset=['Taxi-Out(평균)'], cmap='OrRd'),
                 use_container_width=True
             )
-        else:
-            st.warning("조건에 맞는 데이터가 없습니다.")
+        else: st.warning("조건에 맞는 데이터가 없습니다.")
 
     with st.expander("📉 강설 영향권별 Taxi-Out 회복 곡선 (Recovery Curve)"):
         recovery_stats = f_hour.groupby('Snow_Status').agg(Avg_Taxi_Out=('Taxi_Out', 'mean')).reset_index()
@@ -462,15 +445,15 @@ with tab4:
             fig_rec.update_traces(texttemplate='%{text:.1f}분', textposition='top center')
             st.plotly_chart(fig_rec, use_container_width=True)
 
-    selected_weather = st.multiselect("🌤️ 시각화할 기상 지표 선택", options=["기온 (°C)", "이슬점 온도 (°C)", "시정 (m)", "풍속 (KT)", "강수량 (mm)"], default=["기온 (°C)", "시정 (m)"])
-    w_map = {"기온 (°C)": "Avg_Temp", "이슬점 온도 (°C)": "Avg_Dew", "시정 (m)": "Avg_Vis", "풍속 (KT)": "Avg_Wind", "강수량 (mm)": "Avg_Precip"}
+    selected_weather = st.multiselect("🌤️ 시각화할 기상 지표 선택", options=["기온 (°C)", "이슬점 온도 (°C)", "상대습도 (%)", "시정 (m)", "풍속 (KT)", "강수량 (mm)"], default=["기온 (°C)", "상대습도 (%)"])
+    w_map = {"기온 (°C)": "Avg_Temp", "이슬점 온도 (°C)": "Avg_Dew", "상대습도 (%)": "Avg_Hum", "시정 (m)": "Avg_Vis", "풍속 (KT)": "Avg_Wind", "강수량 (mm)": "Avg_Precip"}
     
     if selected_weather:
         fig_w = make_subplots(specs=[[{"secondary_y": True}]])
-        colors = ['#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3']
+        colors = ['#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692']
         for i, w_name in enumerate(selected_weather):
             col = w_map[w_name]
-            is_sec = w_name in ["시정 (m)", "강수량 (mm)"]
+            is_sec = w_name in ["시정 (m)", "강수량 (mm)", "상대습도 (%)"]
             if w_name == "강수량 (mm)": fig_w.add_trace(go.Bar(x=w_hour['Hour'], y=w_hour[col], name=w_name, marker_color=colors[i]), secondary_y=is_sec)
             else: fig_w.add_trace(go.Scatter(x=w_hour['Hour'], y=w_hour[col], name=w_name, line=dict(color=colors[i])), secondary_y=is_sec)
         fig_w.update_layout(title=f"{sel_date} 시간대별 기상 트렌드", hovermode="x unified")
@@ -481,33 +464,26 @@ with tab4:
 # ------------------------------------------
 with tab5:
     st.header("✈️ 항공사별 종합 운영 퍼포먼스")
-    st.markdown("항공사 그룹 및 개별 항공사별 운항 점유율, 지연율, 지상이동 효율성을 비교합니다.")
-    
     airline_stats = flights.groupby(['Airline_Group', 'Airline']).agg(
-        Flight_Count=('FLT', 'count'),
-        Delay_Count=('Is_Delayed', 'sum'),
+        Flight_Count=('FLT', 'count'), Delay_Count=('Is_Delayed', 'sum'),
         Avg_Delay_Time=('Total_Delay', lambda x: x[x > 15].mean() if len(x[x > 15]) > 0 else 0),
-        Avg_Taxi_Out=('Taxi_Out', 'mean') # Taxi_In 제거
+        Avg_Taxi_Out=('Taxi_Out', 'mean')
     ).reset_index()
     
     airline_stats['Delay_Rate(%)'] = (airline_stats['Delay_Count'] / airline_stats['Flight_Count']) * 100
     airline_stats = airline_stats.sort_values('Flight_Count', ascending=False)
     
-    top_n = st.slider("그래프에 표시할 상위 항공사 수 (운항 편수 기준)", min_value=5, max_value=len(airline_stats) if len(airline_stats) > 0 else 5, value=min(20, len(airline_stats)))
+    top_n = st.slider("그래프에 표시할 상위 항공사 수", min_value=5, max_value=len(airline_stats) if len(airline_stats) > 0 else 5, value=min(20, len(airline_stats)))
     view_stats = airline_stats.head(top_n)
     
     if not view_stats.empty:
-        fig_a1 = px.bar(view_stats, x='Airline', y=['Flight_Count', 'Delay_Count'], 
-                        title=f"상위 {top_n}개 항공사 운항 편수 대비 지연 건수", barmode='group',
-                        labels={'value': '건수 (편)', 'variable': '구분'})
+        fig_a1 = px.bar(view_stats, x='Airline', y=['Flight_Count', 'Delay_Count'], title=f"상위 {top_n}개 항공사 운항 편수 대비 지연 건수", barmode='group')
         st.plotly_chart(fig_a1, use_container_width=True)
         
         fig_a2 = make_subplots(specs=[[{"secondary_y": True}]])
         fig_a2.add_trace(go.Bar(x=view_stats['Airline'], y=view_stats['Avg_Delay_Time'], name="평균 지연시간 (분)", marker_color='#FFA15A'), secondary_y=False)
         fig_a2.add_trace(go.Scatter(x=view_stats['Airline'], y=view_stats['Delay_Rate(%)'], name="지연율 (%)", mode='lines+markers', line=dict(color='#EF553B', width=3)), secondary_y=True)
         fig_a2.update_layout(title=f"상위 {top_n}개 항공사 평균 지연시간 및 지연율", hovermode="x unified")
-        fig_a2.update_yaxes(title_text="평균 지연시간 (분)", secondary_y=False)
-        fig_a2.update_yaxes(title_text="지연율 (%)", secondary_y=True)
         st.plotly_chart(fig_a2, use_container_width=True)
         
         fig_a3 = px.bar(view_stats, x='Airline', y='Avg_Taxi_Out', title=f"상위 {top_n}개 항공사 평균 Taxi-Out 소요시간", hover_data=['Airline_Group'])
@@ -515,28 +491,65 @@ with tab5:
         
         st.divider()
         with st.expander("📉 항공사 그룹별 강설 회복 곡선 (FSC vs LCC) 보기"):
-            st.markdown("**대형사(FSC)와 저비용항공사(LCC)** 등 항공사 그룹별로 눈보라 이후 지상이동시간이 얼마나 빨리 정상화되는지 직접 비교합니다.")
-            
             airline_recovery = flights.groupby(['Snow_Status', 'Airline_Group'])['Taxi_Out'].mean().reset_index()
-            
             if not airline_recovery.empty:
-                fig_a_rec = px.line(
-                    airline_recovery, x='Snow_Status', y='Taxi_Out', color='Airline_Group', markers=True,
-                    title="항공사 그룹별 강설 영향권에 따른 평균 Taxi-Out 회복 추이"
-                )
+                fig_a_rec = px.line(airline_recovery, x='Snow_Status', y='Taxi_Out', color='Airline_Group', markers=True, title="항공사 그룹별 강설 영향권에 따른 평균 Taxi-Out 회복 추이")
                 fig_a_rec.update_traces(line=dict(width=4), marker=dict(size=10))
-                fig_a_rec.update_layout(hovermode="x unified")
-                fig_a_rec.update_yaxes(title_text="평균 Taxi-Out 시간 (분)")
-                fig_a_rec.update_xaxes(title_text="강설 영향권 (회복 단계)")
                 st.plotly_chart(fig_a_rec, use_container_width=True)
 
     st.divider()
     st.subheader("📊 항공사별 상세 통계 표")
+    st.dataframe(airline_stats.style.format({'Avg_Delay_Time': '{:.1f} 분', 'Avg_Taxi_Out': '{:.1f} 분', 'Delay_Rate(%)': '{:.1f} %'}), use_container_width=True)
+
+# ------------------------------------------
+# [TAB 6] 제방빙 및 강설 심층 분석
+# ------------------------------------------
+with tab6:
+    st.header("❄️ 강설 유형 및 위험 기상에 따른 지상이동시간 심층 분석")
+    st.markdown("마스터 데이터 전처리 단계에서 물리 엔진(Clausius-Clapeyron)을 통해 분류된 **건설(Dry Snow) vs 습설(Wet Snow)** 및 기타 제방빙이 필요한 위험 기상 유무에 따른 차이를 확인합니다.")
+    
+    snow_type_stats = flights.groupby('Snow_Type').agg(
+        Flight_Count=('FLT', 'count'),
+        Avg_Total_Delay=('Total_Delay', 'mean'),
+        Avg_Taxi_Out=('Taxi_Out', 'mean'),
+        Std_Taxi_Out=('Taxi_Out', 'std'),
+        Avg_Temp=('Temp', 'mean'),
+        Avg_Hum=('Humidity', 'mean')
+    ).reset_index()
+    
+    # 정렬 (비강설 -> 건설 -> 습설 -> 기타)
+    sort_order = {"비강설 (Non-Snow)": 0, "건설 (Dry Snow)": 1, "습설 (Wet Snow)": 2, "기타 제방빙 위험기상": 3}
+    snow_type_stats['Order'] = snow_type_stats['Snow_Type'].map(sort_order)
+    snow_type_stats = snow_type_stats.sort_values('Order').drop(columns=['Order'])
+    
+    st.subheader("📊 강설 유형별 평균 지연 및 지상이동시간 비교")
+    c1, c2 = st.columns(2)
+    colors = {"비강설 (Non-Snow)": '#00CC96', "건설 (Dry Snow)": '#AB63FA', "습설 (Wet Snow)": '#EF553B', "기타 제방빙 위험기상": '#FFA15A'}
+    
+    with c1:
+        fig_s1 = px.bar(snow_type_stats, x='Snow_Type', y='Avg_Taxi_Out', color='Snow_Type', title="유형별 평균 Taxi-Out 소요시간 (분)", text_auto='.1f', color_discrete_map=colors)
+        st.plotly_chart(fig_s1, use_container_width=True)
+        
+    with c2:
+        fig_s2 = px.bar(snow_type_stats, x='Snow_Type', y='Avg_Total_Delay', color='Snow_Type', title="유형별 평균 전체 지연시간 (분)", text_auto='.1f', color_discrete_map=colors)
+        st.plotly_chart(fig_s2, use_container_width=True)
+        
+    st.divider()
+    st.subheader("📈 Taxi-Out 시간 분포 및 변동성 (Box Plot)")
+    st.markdown("제방빙 작업 난이도에 따른 **데이터의 산포도(Variance)와 이상치 꼬리(Tail)**를 파악합니다. 습설일수록 기체 표면에 얼어붙어 제빙액 소모가 많고 시간이 불규칙해집니다.")
+    
+    fig_box = px.box(flights, x='Snow_Type', y='Taxi_Out', color='Snow_Type', title="강설/기상 유형별 Taxi-Out 시간 분포", color_discrete_map=colors, hover_data=['FLT', 'Temp', 'Humidity', 'Total_Delay'])
+    fig_box.update_traces(boxpoints='outliers', jitter=0.3)
+    fig_box.update_xaxes(categoryorder='array', categoryarray=["비강설 (Non-Snow)", "건설 (Dry Snow)", "습설 (Wet Snow)", "기타 제방빙 위험기상"])
+    st.plotly_chart(fig_box, use_container_width=True)
+    
+    st.divider()
+    st.subheader("📋 기상 유형별 상세 물리 지표 요약")
     st.dataframe(
-        airline_stats.style.format({
-            'Avg_Delay_Time': '{:.1f} 분',
-            'Avg_Taxi_Out': '{:.1f} 분',
-            'Delay_Rate(%)': '{:.1f} %'
-        }), 
+        snow_type_stats.style.format({
+            'Flight_Count': '{:,.0f} 편', 'Avg_Total_Delay': '{:.1f} 분',
+            'Avg_Taxi_Out': '{:.1f} 분', 'Std_Taxi_Out': '{:.1f} 분',
+            'Avg_Temp': '{:.1f} °C', 'Avg_Hum': '{:.1f} %'
+        }).background_gradient(subset=['Avg_Taxi_Out', 'Std_Taxi_Out', 'Avg_Hum'], cmap='OrRd'),
         use_container_width=True
     )
