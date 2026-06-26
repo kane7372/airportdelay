@@ -15,7 +15,7 @@ st.set_page_config(page_title="Incheon Airport Departure Dashboard", layout="wid
 # ==========================================
 @st.cache_data
 def load_data():
-    file_path = 'master_dashboard_data2.parquet'
+    file_path = 'master_dashboard_data.parquet'
     if not os.path.exists(file_path):
         file_path = 'master_dashboard_data.csv'
         if not os.path.exists(file_path):
@@ -46,14 +46,14 @@ def load_data():
             
         df['Airline_Group'] = df['Airline'].apply(categorize_airline)
         
-        # 🌟 기상 유형 카테고리화 (Tab 6 전용)
-        # 마스터 데이터에 이미 계산된 Weather_Desc 컬럼 활용
+        # 🌟 [수정 반영] 마스터 데이터의 고도화된 Weather_Desc를 매핑
         def categorize_weather(w_desc):
             w = str(w_desc)
             if '건설' in w: return '건설 (Dry Snow)'
             elif '습설' in w: return '습설 (Wet Snow)'
-            elif '날림눈' in w or '눈보라' in w: return '건설 (Dry Snow)' # 강풍 동반 눈
-            elif '어는 비' in w or '결빙' in w or '진눈깨비' in w: return '기타 제방빙 위험기상'
+            elif '날림눈' in w or '눈보라' in w: return '건설 (Dry Snow)'
+            # 📌 안개/빙무 조건이 포함되도록 조건 추가 보완
+            elif '어는 비' in w or '결빙' in w or '진눈깨비' in w or '안개/빙무' in w: return '기타 제방빙 위험기상'
             else: return '비강설 (Non-Snow)'
             
         df['Snow_Type'] = df['Weather_Desc'].apply(categorize_weather)
@@ -154,7 +154,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "⏰ 3. 시간대별 통계", 
     "🗺️ 4. 상세 지도 분석",
     "✈️ 5. 항공사별 통계",
-    "❄️ 6. 제방빙 및 강설 심층 분석" # 신규 탭
+    "❄️ 6. 제방빙 및 강설 심층 분석"
 ])
 
 # ------------------------------------------
@@ -275,6 +275,8 @@ with tab2:
 
     if not daily_stats.empty:
         fig_d = px.line(daily_stats, x='Date_Only', y='Avg_Taxi_Out', color='STS_Detail', facet_row='Snow_Status', markers=True, height=800, title="일별 강설 여부에 따른 평균 Taxi-Out 추이")
+        # 🌟 일별 데이터 가독성 및 날짜 공백 연도 축소 최적화 적용
+        fig_d.update_xaxes(type='category', categoryorder='category ascending')
         fig_d.update_yaxes(matches=None)
         st.plotly_chart(fig_d, use_container_width=True)
         
@@ -287,12 +289,17 @@ with tab2:
             )
     
     c1, c2 = st.columns(2)
-    with c1: st.plotly_chart(px.bar(daily_stats, x='Date_Only', y='Delay_Count', color='STS_Detail', title="일별 지연 건수", barmode='stack'), use_container_width=True)
+    with c1: 
+        fig_daily_delay = px.bar(daily_stats, x='Date_Only', y='Delay_Count', color='STS_Detail', title="일별 지연 건수", barmode='stack')
+        fig_daily_delay.update_xaxes(type='category', categoryorder='category ascending')
+        st.plotly_chart(fig_daily_delay, use_container_width=True)
     
     daily_stats['Taxi_Ratio'] = daily_stats['Taxi_Ratio'].clip(upper=100)
     with c2: 
         c2_stats = daily_stats[daily_stats['Taxi_Ratio'] > 0]
-        st.plotly_chart(px.line(c2_stats, x='Date_Only', y='Taxi_Ratio', color='STS_Detail', markers=True, title="일별 지연시간 중 지상이동 비중(%)"), use_container_width=True)
+        fig_daily_ratio = px.line(c2_stats, x='Date_Only', y='Taxi_Ratio', color='STS_Detail', markers=True, title="일별 지연시간 중 지상이동 비중(%)")
+        fig_daily_ratio.update_xaxes(type='category', categoryorder='category ascending')
+        st.plotly_chart(fig_daily_ratio, use_container_width=True)
 
 # ------------------------------------------
 # [TAB 3] 시간대별 통계
@@ -517,7 +524,6 @@ with tab6:
         Avg_Hum=('Humidity', 'mean')
     ).reset_index()
     
-    # 정렬 (비강설 -> 건설 -> 습설 -> 기타)
     sort_order = {"비강설 (Non-Snow)": 0, "건설 (Dry Snow)": 1, "습설 (Wet Snow)": 2, "기타 제방빙 위험기상": 3}
     snow_type_stats['Order'] = snow_type_stats['Snow_Type'].map(sort_order)
     snow_type_stats = snow_type_stats.sort_values('Order').drop(columns=['Order'])
@@ -536,7 +542,7 @@ with tab6:
         
     st.divider()
     st.subheader("📈 Taxi-Out 시간 분포 및 변동성 (Box Plot)")
-    st.markdown("제방빙 작업 난이도에 따른 **데이터의 산포도(Variance)와 이상치 꼬리(Tail)**를 파악합니다. 습설일수록 기체 표면에 얼어붙어 제빙액 소모가 많고 시간이 불규칙해집니다.")
+    st.markdown("제방빙 작업 난이도에 따른 **데이터의 산포도(Variance)와 이상치 꼬리(Tail)**를 파악합니다. 습설이나 어는 비 조건일수록 시간이 불규칙해집니다.")
     
     fig_box = px.box(flights, x='Snow_Type', y='Taxi_Out', color='Snow_Type', title="강설/기상 유형별 Taxi-Out 시간 분포", color_discrete_map=colors, hover_data=['FLT', 'Temp', 'Humidity', 'Total_Delay'])
     fig_box.update_traces(boxpoints='outliers', jitter=0.3)
