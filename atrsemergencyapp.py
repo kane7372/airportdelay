@@ -597,3 +597,88 @@ with tab6:
         }).background_gradient(subset=['Avg_Taxi_Out', 'Flight_Count', 'Avg_Hum'], cmap='OrRd'),
         use_container_width=True
     )
+    # =========================================================
+    # 🌟 [신규 추가] 건설 vs 습설 시계열 & 기상 변수 비교 (월/요일/시간)
+    # =========================================================
+    st.divider()
+    st.subheader("🔍 건설 vs 습설 상세 시계열 & 기상 비교")
+    st.markdown("건설과 습설이 발생하는 구체적인 시기(월/요일/시간대)와 그에 따른 지상이동시간 및 기상 변수(기온/습도)의 변화를 탭별로 심층 비교합니다.")
+    
+    # 건설, 습설 데이터만 필터링
+    snow_compare_df = flights[flights['Snow_Type'].isin(['건설 (Dry Snow)', '습설 (Wet Snow)'])].copy()
+    
+    if snow_compare_df.empty:
+        st.warning("선택된 필터 기간 내에 건설 또는 습설 데이터가 없습니다.")
+    else:
+        with st.expander("❄️ 시계열 (월/요일/시간대) 패턴 및 기상 변화 통합 분석 차트", expanded=True):
+            st6_1, st6_2, st6_3 = st.tabs(["📅 월별 비교", "📆 요일별 비교", "⏰ 시간대별 비교"])
+            
+            # 재사용을 위한 공통 차트 렌더링 함수
+            def plot_snow_comparison(df_grouped, x_col, x_title):
+                # 1. Taxi-Out (막대) & 운항 편수 (꺾은선) - 이중축 차트
+                fig1 = make_subplots(specs=[[{"secondary_y": True}]])
+                for s_type in ['건설 (Dry Snow)', '습설 (Wet Snow)']:
+                    df_f = df_grouped[df_grouped['Snow_Type'] == s_type]
+                    if df_f.empty: continue
+                    fig1.add_trace(go.Bar(x=df_f[x_col], y=df_f['Avg_Taxi_Out'], name=f"{s_type} (Taxi-Out)", marker_color=snow_colors[s_type]), secondary_y=False)
+                    fig1.add_trace(go.Scatter(x=df_f[x_col], y=df_f['Flight_Count'], name=f"{s_type} (운항편수)", mode='lines+markers', line=dict(color=snow_colors[s_type], dash='dot')), secondary_y=True)
+                
+                fig1.update_layout(title=f"[{x_title}] 건설 vs 습설 지상이동시간 및 발생 빈도", barmode='group', hovermode="x unified", height=450)
+                fig1.update_yaxes(title_text="평균 Taxi-Out (분)", secondary_y=False)
+                fig1.update_yaxes(title_text="운항 편수 (건)", secondary_y=True)
+                if x_col != 'Hour': fig1.update_xaxes(type='category', categoryorder='category ascending')
+                else: fig1.update_xaxes(tickmode='linear', dtick=1)
+                
+                # 2. 기온 (꺾은선) & 상대습도 (막대) - 이중축 차트
+                fig2 = make_subplots(specs=[[{"secondary_y": True}]])
+                for s_type in ['건설 (Dry Snow)', '습설 (Wet Snow)']:
+                    df_f = df_grouped[df_grouped['Snow_Type'] == s_type]
+                    if df_f.empty: continue
+                    fig2.add_trace(go.Scatter(x=df_f[x_col], y=df_f['Avg_Temp'], name=f"{s_type} (기온)", mode='lines+markers', marker_color=snow_colors[s_type]), secondary_y=False)
+                    fig2.add_trace(go.Bar(x=df_f[x_col], y=df_f['Avg_Hum'], name=f"{s_type} (습도)", marker_color=snow_colors[s_type], opacity=0.4), secondary_y=True)
+                
+                fig2.update_layout(title=f"[{x_title}] 건설 vs 습설 평균 기온 및 상대습도 비교", barmode='group', hovermode="x unified", height=450)
+                fig2.update_yaxes(title_text="평균 기온 (°C)", secondary_y=False)
+                fig2.update_yaxes(title_text="평균 상대습도 (%)", secondary_y=True)
+                if x_col != 'Hour': fig2.update_xaxes(type='category', categoryorder='category ascending')
+                else: fig2.update_xaxes(tickmode='linear', dtick=1)
+                
+                return fig1, fig2
+
+            # ST6-1. 월별 비교
+            with st6_1:
+                grp_ym = snow_compare_df.groupby(['YM', 'Snow_Type']).agg(
+                    Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Temp=('Temp', 'mean'), Avg_Hum=('Humidity', 'mean')
+                ).reset_index()
+                f1, f2 = plot_snow_comparison(grp_ym, 'YM', '월별')
+                st.plotly_chart(f1, use_container_width=True)
+                st.plotly_chart(f2, use_container_width=True)
+                
+            # ST6-2. 요일별 비교
+            with st6_2:
+                grp_wd = snow_compare_df.groupby(['Weekday', 'Snow_Type']).agg(
+                    Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Temp=('Temp', 'mean'), Avg_Hum=('Humidity', 'mean')
+                ).reset_index().sort_values('Weekday')
+                f1, f2 = plot_snow_comparison(grp_wd, 'Weekday', '요일별')
+                st.plotly_chart(f1, use_container_width=True)
+                st.plotly_chart(f2, use_container_width=True)
+                
+            # ST6-3. 시간대별 비교
+            with st6_3:
+                grp_hr = snow_compare_df.groupby(['Hour', 'Snow_Type']).agg(
+                    Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Temp=('Temp', 'mean'), Avg_Hum=('Humidity', 'mean')
+                ).reset_index()
+                f1, f2 = plot_snow_comparison(grp_hr, 'Hour', '시간대별')
+                st.plotly_chart(f1, use_container_width=True)
+                st.plotly_chart(f2, use_container_width=True)
+    
+    st.divider()
+    st.subheader("📋 기상 유형별 전체 요약 지표")
+    st.dataframe(
+        snow_type_stats.style.format({
+            'Flight_Count': '{:,.0f} 편', 'Avg_Total_Delay': '{:.1f} 분',
+            'Avg_Taxi_Out': '{:.1f} 분', 'Std_Taxi_Out': '{:.1f} 분',
+            'Avg_Temp': '{:.1f} °C', 'Avg_Hum': '{:.1f} %'
+        }).background_gradient(subset=['Avg_Taxi_Out', 'Std_Taxi_Out', 'Avg_Hum'], cmap='OrRd'),
+        use_container_width=True
+    )
