@@ -555,11 +555,11 @@ with tab6:
     st.plotly_chart(fig_box, use_container_width=True)
     
     # =========================================================
-    # 🌟 [신규 추가] 건설 vs 습설 시계열 & 기상 변수 비교 (월/요일/시간)
+    # 🌟 [신규 추가] 건설 vs 습설 시계열 & 다중 기상 변수 비교 
     # =========================================================
     st.divider()
-    st.subheader("🔍 건설 vs 습설 상세 시계열 & 기상 비교")
-    st.markdown("건설과 습설이 발생하는 구체적인 시기(월/요일/시간대)와 그에 따른 지상이동시간 및 기상 변수(기온/습도)의 변화를 탭별로 심층 비교합니다.")
+    st.subheader("🔍 건설 vs 습설 상세 시계열 & 기상 지표 비교")
+    st.markdown("건설과 습설이 발생하는 구체적인 시기(월/요일/시간대)와 그에 따른 지상이동시간 및 **사용자가 선택한 다양한 기상 지표**의 변화를 심층 비교합니다.")
     
     # 건설, 습설 데이터만 필터링
     snow_compare_df = flights[flights['Snow_Type'].isin(['건설 (Dry Snow)', '습설 (Wet Snow)'])].copy()
@@ -567,6 +567,25 @@ with tab6:
     if snow_compare_df.empty:
         st.warning("선택된 필터 기간 내에 건설 또는 습설 데이터가 없습니다.")
     else:
+        # 기상 지표 다중 선택 옵션
+        st.markdown("#### ☁️ 비교할 기상 지표 선택")
+        selected_weather_tab6 = st.multiselect(
+            "아래 차트에 함께 표출할 기상 변수를 선택하세요.", 
+            options=["기온 (°C)", "상대습도 (%)", "풍속 (KT)", "시정 (m)", "강수량 (mm)"], 
+            default=["기온 (°C)", "상대습도 (%)"],
+            key="tab6_weather_multiselect"
+        )
+        
+        # 기상 변수를 DataFrame 컬럼명과 매핑
+        w_map_tab6 = {
+            "기온 (°C)": ("Avg_Temp", "°C", False), # False = Left Y축 (꺾은선)
+            "이슬점 온도 (°C)": ("Avg_Dew", "°C", False),
+            "상대습도 (%)": ("Avg_Hum", "%", True),  # True = Right Y축 (막대)
+            "풍속 (KT)": ("Avg_Wind", "KT", False),
+            "시정 (m)": ("Avg_Vis", "m", True),
+            "강수량 (mm)": ("Avg_Precip", "mm", True)
+        }
+        
         with st.expander("❄️ 시계열 (월/요일/시간대) 패턴 및 기상 변화 통합 분석 차트", expanded=True):
             st6_1, st6_2, st6_3 = st.tabs(["📅 월별 비교", "📆 요일별 비교", "⏰ 시간대별 비교"])
             
@@ -586,26 +605,47 @@ with tab6:
                 if x_col != 'Hour': fig1.update_xaxes(type='category', categoryorder='category ascending')
                 else: fig1.update_xaxes(tickmode='linear', dtick=1)
                 
-                # 2. 기온 (꺾은선) & 상대습도 (막대) - 이중축 차트
-                fig2 = make_subplots(specs=[[{"secondary_y": True}]])
-                for s_type in ['건설 (Dry Snow)', '습설 (Wet Snow)']:
-                    df_f = df_grouped[df_grouped['Snow_Type'] == s_type]
-                    if df_f.empty: continue
-                    fig2.add_trace(go.Scatter(x=df_f[x_col], y=df_f['Avg_Temp'], name=f"{s_type} (기온)", mode='lines+markers', marker_color=snow_colors[s_type]), secondary_y=False)
-                    fig2.add_trace(go.Bar(x=df_f[x_col], y=df_f['Avg_Hum'], name=f"{s_type} (습도)", marker_color=snow_colors[s_type], opacity=0.4), secondary_y=True)
-                
-                fig2.update_layout(title=f"[{x_title}] 건설 vs 습설 평균 기온 및 상대습도 비교", barmode='group', hovermode="x unified", height=450)
-                fig2.update_yaxes(title_text="평균 기온 (°C)", secondary_y=False)
-                fig2.update_yaxes(title_text="평균 상대습도 (%)", secondary_y=True)
-                if x_col != 'Hour': fig2.update_xaxes(type='category', categoryorder='category ascending')
-                else: fig2.update_xaxes(tickmode='linear', dtick=1)
+                # 2. 다중 선택 기상 변수 동적 차트
+                if selected_weather_tab6:
+                    fig2 = make_subplots(specs=[[{"secondary_y": True}]])
+                    for s_type in ['건설 (Dry Snow)', '습설 (Wet Snow)']:
+                        df_f = df_grouped[df_grouped['Snow_Type'] == s_type]
+                        if df_f.empty: continue
+                        
+                        # 선택된 기상 변수들을 차례대로 추가
+                        for w_name in selected_weather_tab6:
+                            col_name, unit, is_secondary = w_map_tab6[w_name]
+                            
+                            # 차트 종류 다르게 (Secondary Y면 막대, Primary Y면 꺾은선)
+                            if is_secondary:
+                                fig2.add_trace(go.Bar(x=df_f[x_col], y=df_f[col_name], name=f"{s_type} ({w_name})", marker_color=snow_colors[s_type], opacity=0.4), secondary_y=True)
+                            else:
+                                fig2.add_trace(go.Scatter(x=df_f[x_col], y=df_f[col_name], name=f"{s_type} ({w_name})", mode='lines+markers', marker_color=snow_colors[s_type]), secondary_y=False)
+                                
+                    fig2.update_layout(title=f"[{x_title}] 건설 vs 습설 다중 기상 지표 비교", barmode='group', hovermode="x unified", height=450)
+                    
+                    # Y축 제목 동적 설정 (선택한 변수의 단위들을 합쳐서 보여줌)
+                    prim_titles = [w for w in selected_weather_tab6 if not w_map_tab6[w][2]]
+                    sec_titles = [w for w in selected_weather_tab6 if w_map_tab6[w][2]]
+                    
+                    if prim_titles: fig2.update_yaxes(title_text=", ".join(prim_titles), secondary_y=False)
+                    if sec_titles: fig2.update_yaxes(title_text=", ".join(sec_titles), secondary_y=True, showgrid=False)
+                    
+                    if x_col != 'Hour': fig2.update_xaxes(type='category', categoryorder='category ascending')
+                    else: fig2.update_xaxes(tickmode='linear', dtick=1)
+                else:
+                    # 선택된 기상 변수가 없을 경우
+                    fig2 = go.Figure()
+                    fig2.update_layout(title="표출할 기상 지표를 위에서 선택해 주세요.", height=300)
                 
                 return fig1, fig2
 
             # ST6-1. 월별 비교
             with st6_1:
                 grp_ym = snow_compare_df.groupby(['YM', 'Snow_Type']).agg(
-                    Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Temp=('Temp', 'mean'), Avg_Hum=('Humidity', 'mean')
+                    Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), 
+                    Avg_Temp=('Temp', 'mean'), Avg_Hum=('Humidity', 'mean'),
+                    Avg_Wind=('Wind_Spd', 'mean'), Avg_Vis=('Visibility', 'mean'), Avg_Precip=('Precip', 'mean')
                 ).reset_index()
                 f1, f2 = plot_snow_comparison(grp_ym, 'YM', '월별')
                 st.plotly_chart(f1, use_container_width=True)
@@ -614,7 +654,9 @@ with tab6:
             # ST6-2. 요일별 비교
             with st6_2:
                 grp_wd = snow_compare_df.groupby(['Weekday', 'Snow_Type']).agg(
-                    Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Temp=('Temp', 'mean'), Avg_Hum=('Humidity', 'mean')
+                    Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), 
+                    Avg_Temp=('Temp', 'mean'), Avg_Hum=('Humidity', 'mean'),
+                    Avg_Wind=('Wind_Spd', 'mean'), Avg_Vis=('Visibility', 'mean'), Avg_Precip=('Precip', 'mean')
                 ).reset_index().sort_values('Weekday')
                 f1, f2 = plot_snow_comparison(grp_wd, 'Weekday', '요일별')
                 st.plotly_chart(f1, use_container_width=True)
@@ -623,7 +665,9 @@ with tab6:
             # ST6-3. 시간대별 비교
             with st6_3:
                 grp_hr = snow_compare_df.groupby(['Hour', 'Snow_Type']).agg(
-                    Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), Avg_Temp=('Temp', 'mean'), Avg_Hum=('Humidity', 'mean')
+                    Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), 
+                    Avg_Temp=('Temp', 'mean'), Avg_Hum=('Humidity', 'mean'),
+                    Avg_Wind=('Wind_Spd', 'mean'), Avg_Vis=('Visibility', 'mean'), Avg_Precip=('Precip', 'mean')
                 ).reset_index()
                 f1, f2 = plot_snow_comparison(grp_hr, 'Hour', '시간대별')
                 st.plotly_chart(f1, use_container_width=True)
