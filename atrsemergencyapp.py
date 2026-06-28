@@ -618,7 +618,7 @@ with tab6:
                             
                             # 차트 종류 다르게 (Secondary Y면 막대, Primary Y면 꺾은선)
                             if is_secondary:
-                                fig2.add_trace(go.Bar(x=df_f[x_col], y=df_f[col_name], name=f"{s_type} ({w_name})", marker_color=snow_colors[s_type], opacity=0.4), secondary_y=True)
+                                fig2.add_trace(go.Bar(x=df_f[x_col], y=df_f[col_name], name=f"{s_type} ({w_name})", marker_color=snow_colors[s_type], opacity=1), secondary_y=True)
                             else:
                                 fig2.add_trace(go.Scatter(x=df_f[x_col], y=df_f[col_name], name=f"{s_type} ({w_name})", mode='lines+markers', marker_color=snow_colors[s_type]), secondary_y=False)
                                 
