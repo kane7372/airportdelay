@@ -516,10 +516,13 @@ with tab5:
 # [TAB 6] 제방빙 및 강설 심층 분석
 # ------------------------------------------
 with tab6:
-    st.header("❄️ 월별 강설 유형 및 위험 기상별 심층 분석")
-    st.markdown("물리 엔진으로 분류된 **건설(Dry) vs 습설(Wet)** 및 위험 기상이 **월별(YM)**로 출발 지상이동시간(Taxi-Out)과 항공기 지연에 어떤 정량적 차이를 유발하는지 트렌드를 분석합니다.")
+    st.header("❄️ 연도별/월별 강설 유형 및 위험 기상별 심층 분석")
+    st.markdown("물리 엔진으로 분류된 **건설(Dry) vs 습설(Wet)** 및 위험 기상이 출발 지상이동시간(Taxi-Out)과 항공기 지연에 어떤 정량적 차이를 유발하는지 트렌드를 분석합니다.")
     
-    # 1. 월별(YM) 및 강설유형별(Snow_Type) 교차 그룹화 집계
+    # Year 컬럼 추출
+    flights['Year'] = pd.to_datetime(flights['STD_Full']).dt.year.astype(str)
+    
+    # 1. 월별(YM) 및 연도별 집계를 위한 데이터 준비
     monthly_snow_stats = flights.groupby(['YM', 'Snow_Type'], dropna=False).agg(
         Flight_Count=('FLT', 'count'),
         Avg_Total_Delay=('Total_Delay', 'mean'),
@@ -529,60 +532,70 @@ with tab6:
         Avg_Hum=('Humidity', 'mean')
     ).reset_index()
     
-    # 정렬 순서 정의
     sort_order = {"비강설 (Non-Snow)": 0, "건설 (Dry Snow)": 1, "습설 (Wet Snow)": 2, "기타 제방빙 위험기상": 3}
     monthly_snow_stats['Type_Order'] = monthly_snow_stats['Snow_Type'].map(sort_order)
     monthly_snow_stats = monthly_snow_stats.sort_values(by=['YM', 'Type_Order']).drop(columns=['Type_Order'])
     
     snow_colors = {"비강설 (Non-Snow)": '#00CC96', "건설 (Dry Snow)": '#AB63FA', "습설 (Wet Snow)": '#EF553B', "기타 제방빙 위험기상": '#FFA15A'}
     
-    # 🌟 차트 1. 월별 강설 유형에 따른 평균 Taxi-Out 소요시간 (Grouped Bar)
+    # =========================================================
+    # 🌟 [전체 4유형 비교] 지상이동시간, 지연시간, 운항편수
+    # =========================================================
+    st.subheader("📊 기상 4개 유형별 평균 지상이동/지연시간 및 운항 편수 비교")
+    
+    total_snow_stats = flights.groupby('Snow_Type').agg(
+        Flight_Count=('FLT', 'count'),
+        Avg_Total_Delay=('Total_Delay', 'mean'),
+        Avg_Taxi_Out=('Taxi_Out', 'mean')
+    ).reset_index()
+    total_snow_stats['Order'] = total_snow_stats['Snow_Type'].map(sort_order)
+    total_snow_stats = total_snow_stats.sort_values('Order').drop(columns=['Order'])
+    
+    c_tot1, c_tot2, c_tot3 = st.columns(3)
+    with c_tot1:
+        fig_t1 = px.bar(total_snow_stats, x='Snow_Type', y='Avg_Taxi_Out', color='Snow_Type', title="유형별 평균 Taxi-Out 소요시간 (분)", text_auto='.1f', color_discrete_map=snow_colors)
+        fig_t1.update_layout(showlegend=False)
+        st.plotly_chart(fig_t1, use_container_width=True)
+    with c_tot2:
+        fig_t2 = px.bar(total_snow_stats, x='Snow_Type', y='Avg_Total_Delay', color='Snow_Type', title="유형별 평균 전체 지연시간 (분)", text_auto='.1f', color_discrete_map=snow_colors)
+        fig_t2.update_layout(showlegend=False)
+        st.plotly_chart(fig_t2, use_container_width=True)
+    with c_tot3:
+        fig_t3 = px.bar(total_snow_stats, x='Snow_Type', y='Flight_Count', color='Snow_Type', title="유형별 전체 운항 편수 (건)", text_auto='.0f', color_discrete_map=snow_colors)
+        fig_t3.update_layout(showlegend=False)
+        st.plotly_chart(fig_t3, use_container_width=True)
+
+    st.divider()
+
+    # =========================================================
+    # 🌟 월별 트렌드 및 박스 플롯
+    # =========================================================
     st.subheader("📊 월별 기상 유형별 지상이동시간(Taxi-Out) 비교")
     fig_ms1 = px.bar(
-        monthly_snow_stats, 
-        x='YM', 
-        y='Avg_Taxi_Out', 
-        color='Snow_Type', 
-        barmode='group',
-        title="월별 기상 유형에 따른 평균 Taxi-Out 소요시간 (분)",
-        text_auto='.1f',
-        color_discrete_map=snow_colors
+        monthly_snow_stats, x='YM', y='Avg_Taxi_Out', color='Snow_Type', barmode='group',
+        title="월별 기상 유형에 따른 평균 Taxi-Out 소요시간 (분)", text_auto='.1f', color_discrete_map=snow_colors
     )
     fig_ms1.update_xaxes(type='category', categoryorder='category ascending')
     st.plotly_chart(fig_ms1, use_container_width=True)
     
-    st.divider()
-    
     c1, c2 = st.columns(2)
     with c1:
-        # 🌟 차트 2. 월별 강설 유형별 운항 편수
         fig_ms2 = px.bar(
-            monthly_snow_stats, 
-            x='YM', 
-            y='Flight_Count', 
-            color='Snow_Type', 
-            barmode='stack',
-            title="월별 기상 유형별 운항 편수 분포",
-            color_discrete_map=snow_colors
+            monthly_snow_stats, x='YM', y='Flight_Count', color='Snow_Type', barmode='stack',
+            title="월별 기상 유형별 운항 편수 분포", color_discrete_map=snow_colors
         )
         fig_ms2.update_xaxes(type='category', categoryorder='category ascending')
         st.plotly_chart(fig_ms2, use_container_width=True)
         
     with c2:
-        # 🌟 차트 3. 월별 기상 유형에 따른 평균 지연시간 추이
         fig_ms3 = px.line(
-            monthly_snow_stats[monthly_snow_stats['Snow_Type'] != '비강설 (Non-Snow)'], # 악기상만
-            x='YM', 
-            y='Avg_Total_Delay', 
-            color='Snow_Type', 
-            markers=True,
-            title="월별 악기상 유형별 평균 전체 지연시간 추이 (분)",
-            color_discrete_map=snow_colors
+            monthly_snow_stats[monthly_snow_stats['Snow_Type'] != '비강설 (Non-Snow)'], 
+            x='YM', y='Avg_Total_Delay', color='Snow_Type', markers=True,
+            title="월별 악기상 유형별 평균 전체 지연시간 추이 (분)", color_discrete_map=snow_colors
         )
         fig_ms3.update_xaxes(type='category', categoryorder='category ascending')
         st.plotly_chart(fig_ms3, use_container_width=True)
         
-    # 박스 플롯은 공간 확보를 위해 Expander 안에 숨김 처리
     with st.expander("📈 Taxi-Out 시간 분포 및 변동성 (Box Plot) 확인하기"):
         st.markdown("제방빙 작업 난이도에 따른 **데이터의 산포도(Variance)와 이상치 꼬리(Tail)**를 파악합니다.")
         fig_box = px.box(flights, x='Snow_Type', y='Taxi_Out', color='Snow_Type', title="강설/기상 유형별 Taxi-Out 시간 분포", color_discrete_map=snow_colors, hover_data=['FLT', 'Temp', 'Humidity', 'Total_Delay'])
@@ -591,13 +604,12 @@ with tab6:
         st.plotly_chart(fig_box, use_container_width=True)
     
     # =========================================================
-    # 🌟 건설 vs 습설 시계열 & 다중 기상 변수 비교 (이전 단계에서 추가된 부분)
+    # 🌟 [연도별 추가] 건설 vs 습설 시계열 & 다중 기상 변수 비교
     # =========================================================
     st.divider()
     st.subheader("🔍 건설 vs 습설 상세 시계열 & 다중 기상 지표 비교")
-    st.markdown("건설과 습설이 발생하는 구체적인 시기(월/요일/시간대)와 그에 따른 지상이동시간 및 **사용자가 선택한 다양한 기상 지표**의 변화를 심층 비교합니다.")
+    st.markdown("건설과 습설이 발생하는 구체적인 시기(연도/월/요일/시간대)와 그에 따른 지상이동시간 및 **사용자가 선택한 다양한 기상 지표**의 변화를 심층 비교합니다.")
     
-    # 건설, 습설 데이터만 필터링
     snow_compare_df = flights[flights['Snow_Type'].isin(['건설 (Dry Snow)', '습설 (Wet Snow)'])].copy()
     
     if snow_compare_df.empty:
@@ -620,11 +632,11 @@ with tab6:
             "강수량 (mm)": ("Avg_Precip", "mm", True)
         }
         
-        with st.expander("❄️ 시계열 (월/요일/시간대) 패턴 및 기상 변화 통합 분석 차트", expanded=True):
-            st6_1, st6_2, st6_3 = st.tabs(["📅 월별 비교", "📆 요일별 비교", "⏰ 시간대별 비교"])
+        with st.expander("❄️ 시계열 패턴 및 기상 변화 통합 분석 차트", expanded=True):
+            # 연도별 탭 추가
+            st6_0, st6_1, st6_2, st6_3 = st.tabs(["🗓️ 연도별 비교", "📅 월별 비교", "📆 요일별 비교", "⏰ 시간대별 비교"])
             
             def plot_snow_comparison(df_grouped, x_col, x_title):
-                # 1. Taxi-Out (막대) & 운항 편수 (꺾은선)
                 fig1 = make_subplots(specs=[[{"secondary_y": True}]])
                 for s_type in ['건설 (Dry Snow)', '습설 (Wet Snow)']:
                     df_f = df_grouped[df_grouped['Snow_Type'] == s_type]
@@ -638,7 +650,6 @@ with tab6:
                 if x_col != 'Hour': fig1.update_xaxes(type='category', categoryorder='category ascending')
                 else: fig1.update_xaxes(tickmode='linear', dtick=1)
                 
-                # 2. 기상 변수 동적 차트
                 if selected_weather_tab6:
                     fig2 = make_subplots(specs=[[{"secondary_y": True}]])
                     for s_type in ['건설 (Dry Snow)', '습설 (Wet Snow)']:
@@ -666,6 +677,20 @@ with tab6:
                 
                 return fig1, fig2
 
+            # ST6-0. 연도별 비교
+            with st6_0:
+                grp_yr = snow_compare_df.groupby(['Year', 'Snow_Type']).agg(
+                    Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), 
+                    Avg_Temp=('Temp', 'mean'), Avg_Hum=('Humidity', 'mean'),
+                    Avg_Wind=('Wind_Spd', 'mean'), Avg_Vis=('Visibility', 'mean'), Avg_Precip=('Precip', 'mean')
+                ).reset_index()
+                # 결측치나 'nan' 년도는 필터링
+                grp_yr = grp_yr[grp_yr['Year'] != 'nan']
+                f1, f2 = plot_snow_comparison(grp_yr, 'Year', '연도별')
+                st.plotly_chart(f1, use_container_width=True)
+                st.plotly_chart(f2, use_container_width=True)
+
+            # ST6-1. 월별 비교
             with st6_1:
                 grp_ym = snow_compare_df.groupby(['YM', 'Snow_Type']).agg(
                     Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), 
@@ -676,6 +701,7 @@ with tab6:
                 st.plotly_chart(f1, use_container_width=True)
                 st.plotly_chart(f2, use_container_width=True)
                 
+            # ST6-2. 요일별 비교
             with st6_2:
                 grp_wd = snow_compare_df.groupby(['Weekday', 'Snow_Type']).agg(
                     Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), 
@@ -686,6 +712,7 @@ with tab6:
                 st.plotly_chart(f1, use_container_width=True)
                 st.plotly_chart(f2, use_container_width=True)
                 
+            # ST6-3. 시간대별 비교
             with st6_3:
                 grp_hr = snow_compare_df.groupby(['Hour', 'Snow_Type']).agg(
                     Flight_Count=('FLT', 'count'), Avg_Taxi_Out=('Taxi_Out', 'mean'), 
